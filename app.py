@@ -30,7 +30,7 @@ def generate_ai_response(prompt):
 # Настройки
 TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота из переменных окружения Render
 DATABASE_URL = os.getenv("postgresql://telegram_bot_db_m0yt_user:Mb7sLI6eTJqaewWfSeitowpxUhue2l6s@dpg-cttkgbd2ng1s73ca4g1g-a/telegram_bot_db_m0yt")  # URL базы данных PostgreSQL из Render
-APP_URL = os.getenv("https://telegram-bot-jnle.onrender.com")  # URL приложения на Render
+APP_URL = os.getenv("APP_UR")  # URL приложения на Render
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # API-ключ OpenAI
 
 # Инициализация OpenAI
