@@ -29,6 +29,43 @@ logger = logging.getLogger(__name__)
 bot = telegram.Bot(token=TOKEN)
 app = Flask(__name__)
 
+
+def handle_message(update, context):
+    """Обработка текстовых сообщений с использованием базы данных и OpenAI GPT"""
+    user_message = update.message.text.lower()
+    user_id = update.message.chat_id
+
+    # Регистрация пользователя
+    register_user(user_id, update.message.chat.first_name)
+
+    if "какие услуги есть" in user_message:
+        # Получение списка услуг из базы данных
+        services = get_services()
+        if services:
+            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
+            update.message.reply_text(f"Доступные услуги:\n{service_list}")
+        else:
+            update.message.reply_text("На данный момент нет доступных услуг.")
+    elif "специалисты" in user_message:
+        # Получение списка специалистов
+        specialists = get_specialists()
+        if specialists:
+            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+        else:
+            update.message.reply_text("На данный момент нет доступных специалистов.")
+    elif "записаться" in user_message:
+        update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
+    else:
+        # Ответ через OpenAI
+        bot_response = generate_ai_response(user_message)
+        update.message.reply_text(bot_response)
+
+
+
+
+
+
 # Подключение к базе данных
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -117,14 +154,20 @@ def start(update, context):
 def show_services(update, context):
     """Вывод списка услуг"""
     services = get_services()
-    service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
-    update.message.reply_text(f"Доступные услуги:\n{service_list}")
+    if services:
+        service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
+        update.message.reply_text(f"Доступные услуги:\n{service_list}")
+    else:
+        update.message.reply_text("На данный момент нет доступных услуг.")
 
 def show_specialists(update, context):
     """Вывод списка специалистов"""
     specialists = get_specialists()
-    specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
-    update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+    if specialists:
+        specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+        update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+    else:
+        update.message.reply_text("На данный момент нет доступных специалистов.")
 
 def check_booking(update, context):
     """Проверка записей пользователя"""
