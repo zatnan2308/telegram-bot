@@ -69,23 +69,14 @@ def get_specialists():
     conn.close()
     return specialists
 
-# Получение записей для пользователя
-def get_bookings_for_user(user_id):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = """
-    SELECT b.date, s.title AS service, sp.name AS specialist
-    FROM bookings b
-    JOIN services s ON b.service_id = s.id
-    JOIN specialists sp ON b.specialist_id = sp.id
-    WHERE b.user_id = %s
-    ORDER BY b.date;
-    """
-    cursor.execute(query, (user_id,))
-    bookings = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return [{"date": b[0], "service": b[1], "specialist": b[2]} for b in bookings]
+# Получение доступных дат и времени для записи
+def get_available_times(specialist_id, service_id):
+    # Здесь должна быть логика получения доступного расписания (заглушка для примера)
+    return [
+        "2025-01-08 10:00:00",
+        "2025-01-08 12:00:00",
+        "2025-01-08 14:00:00"
+    ]
 
 # Создание записи
 def create_booking(user_id, service_id, specialist_id, date):
@@ -100,50 +91,8 @@ def create_booking(user_id, service_id, specialist_id, date):
     cursor.close()
     conn.close()
 
-# Определение намерения пользователя
-def determine_intent(user_message):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": (
-                    "Ты — Telegram-бот для управления записями. "
-                    "Твоя задача — анализировать запросы пользователей и определять их намерения: "
-                    "'специалисты', 'услуги', 'записаться' или 'другое'. "
-                    "Если пользователь спрашивает о мастерах, специалистах, напиши 'специалисты'. "
-                    "Если он спрашивает о доступных услугах, напиши 'услуги'. "
-                    "Если он хочет записаться, напиши 'записаться'. "
-                    "Если запрос не относится ни к одной из этих категорий, напиши 'другое'."
-                )},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=20,
-            temperature=0.7
-        )
-        intent = response['choices'][0]['message']['content'].strip().lower()
-        logger.info(f"Intent determined: {intent}")
-        return intent
-    except Exception as e:
-        logger.error(f"Error determining intent: {e}")
-        return "другое"
-
-# Генерация ответа через OpenAI
-def generate_ai_response(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except openai.error.RateLimitError:
-        return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
-    except Exception as e:
-        return f"Произошла ошибка: {e}"
+# Состояния для записи
+user_booking_state = {}
 
 # Обработка сообщений пользователя
 def handle_message(update, context):
@@ -153,29 +102,62 @@ def handle_message(update, context):
     # Регистрация пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    # Определяем намерение
-    intent = determine_intent(user_message)
-    logger.info(f"User message: {user_message}, Intent: {intent}")
+    # Проверяем, находится ли пользователь в процессе записи
+    if user_id in user_booking_state:
+        state = user_booking_state[user_id]
 
-    if intent == "услуги":
+        if state['step'] == 'select_service':
+            services = get_services()
+            service = next((s for s in services if s[1].lower() == user_message.lower()), None)
+            if service:
+                state['service_id'] = service[0]
+                state['step'] = 'select_specialist'
+                specialists = get_specialists()
+                specialist_list = "\n".join([f"{s[0]}. {s[1]}" for s in specialists])
+                update.message.reply_text(f"Вы выбрали услугу: {service[1]}\nПожалуйста, выберите специалиста:\n{specialist_list}")
+            else:
+                update.message.reply_text("Такой услуги нет. Попробуйте снова.")
+        elif state['step'] == 'select_specialist':
+            specialists = get_specialists()
+            specialist = next((s for s in specialists if s[1].lower() == user_message.lower()), None)
+            if specialist:
+                state['specialist_id'] = specialist[0]
+                state['step'] = 'select_time'
+                available_times = get_available_times(state['specialist_id'], state['service_id'])
+                time_list = "\n".join(available_times)
+                update.message.reply_text(f"Доступное время:\n{time_list}\nВведите удобное время.")
+            else:
+                update.message.reply_text("Такого специалиста нет. Попробуйте снова.")
+        elif state['step'] == 'select_time':
+            available_times = get_available_times(state['specialist_id'], state['service_id'])
+            if user_message in available_times:
+                state['date'] = user_message
+                state['step'] = 'confirm'
+                update.message.reply_text(f"Вы выбрали:\nУслуга: {state['service_id']}\nСпециалист: {state['specialist_id']}\nВремя: {state['date']}\nПодтвердите запись (да/нет).")
+            else:
+                update.message.reply_text("Неправильное время. Попробуйте снова.")
+        elif state['step'] == 'confirm':
+            if user_message.lower() == 'да':
+                create_booking(user_id, state['service_id'], state['specialist_id'], state['date'])
+                update.message.reply_text("Запись успешно создана! Спасибо!")
+                del user_booking_state[user_id]
+            elif user_message.lower() == 'нет':
+                update.message.reply_text("Запись отменена.")
+                del user_booking_state[user_id]
+            else:
+                update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+        return
+
+    # Начало процесса записи
+    if user_message.lower() in ["записаться", "хочу записаться"]:
+        user_booking_state[user_id] = {'step': 'select_service'}
         services = get_services()
-        if services:
-            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
-            update.message.reply_text(f"Доступные услуги:\n{service_list}")
-        else:
-            update.message.reply_text("На данный момент нет доступных услуг.")
-    elif intent == "специалисты":
-        specialists = get_specialists()
-        if specialists:
-            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
-            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
-        else:
-            update.message.reply_text("На данный момент нет доступных специалистов.")
-    elif intent == "записаться":
-        update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
-    else:
-        bot_response = generate_ai_response(user_message)
-        update.message.reply_text(bot_response)
+        service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+        update.message.reply_text(f"Доступные услуги:\n{service_list}\nВведите название услуги.")
+        return
+
+    # Дефолтный ответ
+    update.message.reply_text("Я не понял ваш запрос. Попробуйте снова.")
 
 # Telegram-обработчики
 def start(update, context):
