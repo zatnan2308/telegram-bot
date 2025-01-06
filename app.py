@@ -2,19 +2,22 @@ from flask import Flask, request
 import logging
 import telegram
 from telegram import Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackContext
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import psycopg2
 import openai
+import datetime
 
 # Настройки
 TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL базы данных PostgreSQL
 APP_URL = os.getenv("APP_URL")  # URL приложения
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # API-ключ OpenAI
+MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")  # ID менеджера
 
-if not TOKEN or not APP_URL or not OPENAI_API_KEY:
-    raise ValueError("Переменные окружения 'TOKEN', 'APP_URL' и 'OPENAI_API_KEY' должны быть установлены.")
+if not TOKEN or not APP_URL or not OPENAI_API_KEY or not MANAGER_CHAT_ID:
+    raise ValueError("Переменные окружения 'TOKEN', 'APP_URL', 'OPENAI_API_KEY' и 'MANAGER_CHAT_ID' должны быть установлены.")
 
 # Инициализация OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -49,7 +52,6 @@ def get_bookings_for_user(user_id):
     cursor.close()
     conn.close()
 
-    # Преобразуем записи в удобный формат
     return [{"date": b[0], "service": b[1], "specialist": b[2]} for b in bookings]
 
 def create_booking(org_id, client_name, client_phone, service_id, specialist_id, date):
@@ -64,6 +66,47 @@ def create_booking(org_id, client_name, client_phone, service_id, specialist_id,
     conn.commit()
     cursor.close()
     conn.close()
+
+# Telegram-обработчики
+def start(update, context):
+    """Обработка команды /start"""
+    update.message.reply_text(
+        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
+        "или задайте мне любой вопрос!"
+    )
+
+def check_booking(update: Update, context: CallbackContext):
+    user_id = update.message.chat_id
+    bookings = get_bookings_for_user(user_id)
+    if bookings:
+        reply = "Ваши записи:\n" + "\n".join(
+            [f"{b['date']} - {b['service']} (Специалист: {b['specialist']})" for b in bookings]
+        )
+    else:
+        reply = "У вас нет активных записей."
+    update.message.reply_text(reply)
+
+def contact_manager(update: Update, context: CallbackContext):
+    user_id = update.message.chat_id
+    user_message = update.message.text
+    context.bot.send_message(
+        chat_id=MANAGER_CHAT_ID,
+        text=f"Сообщение от клиента {user_id}:\n{user_message}"
+    )
+    update.message.reply_text("Ваше сообщение было отправлено менеджеру. Мы скоро свяжемся с вами.")
+
+def handle_message(update, context):
+    """Обработка текстовых сообщений с использованием OpenAI GPT и локальной логики"""
+    user_message = update.message.text.lower()
+    user_id = update.message.chat_id
+
+    if "у меня есть запись" in user_message:
+        check_booking(update, context)
+    elif "связаться с менеджером" in user_message:
+        contact_manager(update, context)
+    else:
+        bot_response = generate_ai_response(user_message)
+        update.message.reply_text(bot_response)
 
 # Функция для генерации ответа с использованием OpenAI GPT
 def generate_ai_response(prompt):
@@ -83,34 +126,6 @@ def generate_ai_response(prompt):
         return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
     except Exception as e:
         return f"Произошла ошибка: {e}"
-
-# Telegram-обработчики
-def start(update, context):
-    """Обработка команды /start"""
-    update.message.reply_text(
-        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
-        "или задайте мне любой вопрос!"
-    )
-
-def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI GPT и локальной логики"""
-    user_message = update.message.text.lower()
-    user_id = update.message.chat_id
-
-    # Если пользователь спрашивает про свои записи
-    if "у меня есть запись" in user_message:
-        bookings = get_bookings_for_user(user_id)
-        if bookings:
-            reply = "Ваши записи:\n" + "\n".join(
-                [f"{b['date']} - {b['service']} (Специалист: {b['specialist']})" for b in bookings]
-            )
-        else:
-            reply = "У вас нет записей."
-        update.message.reply_text(reply)
-    else:
-        # Используем OpenAI для ответа
-        bot_response = generate_ai_response(user_message)
-        update.message.reply_text(bot_response)
 
 # Flask-маршруты
 @app.route(f"/{TOKEN}", methods=["POST"])
