@@ -103,38 +103,47 @@ def generate_ai_response(prompt):
         return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         return f"Ошибка: {e}"
+        
 
-# Обработка сообщений пользователя
 def handle_message(update, context):
-    user_message = update.message.text
+    """Обработка текстовых сообщений с использованием OpenAI и базы данных"""
+    user_message = update.message.text.lower()
     user_id = update.message.chat_id
 
     # Регистрация пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    # Определяем намерение пользователя
+    # Проверяем намерение
     intent = determine_intent(user_message)
-    logger.info(f"User message: {user_message}, Intent: {intent}")
+    logger.info(f"User message: {user_message}, Determined intent: {intent}")
 
     if intent == "услуги":
+        # Получение списка услуг из базы данных
         services = get_services()
         if services:
-            service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
             update.message.reply_text(f"Доступные услуги:\n{service_list}")
         else:
             update.message.reply_text("На данный момент нет доступных услуг.")
     elif intent == "специалисты":
+        # Получение списка специалистов из базы данных
         specialists = get_specialists()
         if specialists:
-            specialist_list = "\n".join([f"{s[0]}. {s[1]}" for s in specialists])
+            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
             update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
         else:
             update.message.reply_text("На данный момент нет доступных специалистов.")
     elif intent == "записаться":
-        update.message.reply_text("Напишите, на какую услугу вы хотите записаться.")
+        # Логика записи
+        user_booking_state[user_id] = {'step': 'select_service'}
+        services = get_services()
+        service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+        update.message.reply_text(f"Доступные услуги:\n{service_list}\nВведите название услуги.")
     else:
+        # Если намерение не определено, используем OpenAI для общего ответа
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
+
 
 # Telegram-обработчики
 def start(update, context):
