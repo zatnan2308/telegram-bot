@@ -7,7 +7,9 @@ import psycopg2
 import openai
 import datetime
 
+# =============================================================================
 # Настройки окружения
+# =============================================================================
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 APP_URL = os.getenv("APP_URL")
@@ -28,16 +30,16 @@ logger = logging.getLogger(__name__)
 bot = telegram.Bot(token=TOKEN)
 app = Flask(__name__)
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Подключение к базе данных
-# ------------------------------------------------------------------------------
+# =============================================================================
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     """
-    Создаёт таблицу booking_times (и при необходимости bookings),
-    если они не существуют. Пример для упрощённой демонстрации.
+    Создаёт таблицы booking_times, bookings (и другие),
+    если их нет. Для упрощения демонстрации.
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -50,12 +52,11 @@ def init_db():
         service_id INT NOT NULL,
         slot_time TIMESTAMP NOT NULL,
         is_booked BOOLEAN NOT NULL DEFAULT FALSE
-        -- Можно добавить FOREIGN KEY, если нужно
     );
     """
     cur.execute(create_booking_times_table)
 
-    # Создание таблицы bookings (если у вас её ещё нет)
+    # Создание таблицы bookings (для финальных записей)
     create_bookings_table = """
     CREATE TABLE IF NOT EXISTS bookings (
         id SERIAL PRIMARY KEY,
@@ -68,14 +69,19 @@ def init_db():
     """
     cur.execute(create_bookings_table)
 
+    # (Опционально) можно добавить нужные FOREIGN KEY
+
     conn.commit()
     cur.close()
     conn.close()
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Работа с таблицей users
-# ------------------------------------------------------------------------------
+# =============================================================================
 def register_user(telegram_id, name, phone="0000000000"):
+    """
+    Сохраняем пользователя в таблицу users, если его там нет.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
@@ -88,10 +94,14 @@ def register_user(telegram_id, name, phone="0000000000"):
     cursor.close()
     conn.close()
 
-# ------------------------------------------------------------------------------
-# Работа с таблицей user_state (храним шаги записи)
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Работа с таблицей user_state (хранение шагов записи)
+# =============================================================================
 def get_user_state(user_id):
+    """
+    Получаем текущее состояние пользователя (шаг диалога) из user_state.
+    Возвращаем dict или None, если записи нет.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
@@ -114,6 +124,9 @@ def get_user_state(user_id):
         return None
 
 def set_user_state(user_id, step, service_id=None, specialist_id=None, chosen_time=None):
+    """
+    Сохраняем/обновляем состояние пользователя в user_state.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
@@ -132,6 +145,9 @@ def set_user_state(user_id, step, service_id=None, specialist_id=None, chosen_ti
     conn.close()
 
 def delete_user_state(user_id):
+    """
+    Удаляем состояние пользователя (сброс сценария записи).
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     query = "DELETE FROM user_state WHERE user_id = %s"
@@ -140,9 +156,9 @@ def delete_user_state(user_id):
     cursor.close()
     conn.close()
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Работа с таблицей services
-# ------------------------------------------------------------------------------
+# =============================================================================
 def get_services():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -153,9 +169,9 @@ def get_services():
     conn.close()
     return services
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Работа с таблицей specialists
-# ------------------------------------------------------------------------------
+# =============================================================================
 def get_specialists():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -166,10 +182,13 @@ def get_specialists():
     conn.close()
     return specialists
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Определение намерения пользователя через OpenAI
-# ------------------------------------------------------------------------------
+# =============================================================================
 def determine_intent(user_message):
+    """
+    GPT-классфикатор: возвращает строку 'услуги', 'специалисты', 'записаться' или 'другое'.
+    """
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -195,10 +214,13 @@ def determine_intent(user_message):
         logger.error(f"Ошибка определения намерения: {e}")
         return "другое"
 
-# ------------------------------------------------------------------------------
-# Генерация ответа через OpenAI
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Генерация ответа через OpenAI (для свободных вопросов)
+# =============================================================================
 def generate_ai_response(prompt):
+    """
+    GPT-сгенерированный ответ для неструктурированных вопросов пользователя.
+    """
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -212,12 +234,12 @@ def generate_ai_response(prompt):
     except Exception as e:
         return f"Ошибка: {e}"
 
-# ------------------------------------------------------------------------------
-# Получаем доступные слоты (дата/время) из новой таблицы booking_times
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Получаем доступные слоты (дата/время) из booking_times
+# =============================================================================
 def get_available_times(specialist_id, service_id):
     """
-    Возвращает список доступных (не забронированных) дат/времени (строкой)
+    Возвращает список доступных (is_booked=FALSE) дат/времени (формат 'YYYY-MM-DD HH:MM')
     для конкретного мастера и услуги, на основании booking_times.
     """
     conn = get_db_connection()
@@ -235,35 +257,31 @@ def get_available_times(specialist_id, service_id):
     cursor.close()
     conn.close()
 
-    # Превратим каждый slot_time в строку формата "YYYY-MM-DD HH:MM"
     available = []
     for row in rows:
-        # row[0] — это тип datetime
         slot_str = row[0].strftime("%Y-%m-%d %H:%M")
         available.append(slot_str)
-
     return available
 
-# ------------------------------------------------------------------------------
-# Создание записи (bookings), а также пометка, что слот занят (is_booked = TRUE)
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Создание записи (bookings) + пометка слота is_booked=TRUE
+# =============================================================================
 def create_booking(user_id, service_id, specialist_id, date_str):
     """
-    1) Парсит строку date_str -> datetime
-    2) Помечает слот в booking_times как занятый
-    3) Создаёт запись в таблице bookings
+    1) Парсим date_str -> datetime
+    2) UPDATE booking_times SET is_booked=TRUE
+    3) INSERT INTO bookings
     """
-    # Парсим строку вида "2025-01-08 14:00" в datetime
+    # Пробуем распарсить дату/время
     try:
         chosen_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M")
     except ValueError:
-        # Если вдруг неверный формат строки
-        return
+        return  # Неверный формат, можно дополнительно обработать
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1) Помечаем is_booked = TRUE для данного слота
+    # 1) Помечаем слот занят
     query_update_slot = """
     UPDATE booking_times
     SET is_booked = TRUE
@@ -273,7 +291,7 @@ def create_booking(user_id, service_id, specialist_id, date_str):
     """
     cursor.execute(query_update_slot, (specialist_id, service_id, chosen_dt))
 
-    # 2) Создаём финальную запись в таблице bookings
+    # 2) Создаём запись в bookings
     query_insert_booking = """
     INSERT INTO bookings (user_id, service_id, specialist_id, date_time)
     VALUES (%s, %s, %s, %s)
@@ -284,23 +302,106 @@ def create_booking(user_id, service_id, specialist_id, date_str):
     cursor.close()
     conn.close()
 
-# ------------------------------------------------------------------------------
-# Обработка текстовых сообщений
-# ------------------------------------------------------------------------------
+# =============================================================================
+# Дополнительные "умные" функции GPT для "живого" общения
+# =============================================================================
+
+def match_specialist_with_gpt(user_input, specialists):
+    """
+    Пример функции, которая обращается к GPT, чтобы понять,
+    какой специалист имеется в виду при неточном вводе.
+    
+    specialists — список кортежей (id, name) из get_specialists().
+    Возвращает (specialist_id, specialist_name) или (None, None).
+    """
+    # Подготовим список имён для GPT
+    specialists_names = [sp[1] for sp in specialists]
+    sys_prompt = (
+        "Ты — ассистент, который сопоставляет имя специалиста. "
+        f"Возможные варианты: {', '.join(specialists_names)}. "
+        "Пользователь ввёл: "
+        f"'{user_input}'. "
+        "Верни точное имя специалиста (из списка) или 'None' если не уверено."
+    )
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_input}
+            ],
+            max_tokens=30,
+            temperature=0.3
+        )
+        recognized = response['choices'][0]['message']['content'].strip()
+
+        # Если GPT вернул "None" или ничего подходящего
+        if recognized.lower() == "none":
+            return None, None
+        
+        # Теперь попробуем найти точное совпадение recognized в specialists
+        recognized_lower = recognized.lower()
+        for sp_id, sp_name in specialists:
+            if sp_name.lower() == recognized_lower:
+                return sp_id, sp_name
+        
+        # Если GPT вернул что-то, но мы не нашли точного совпадения
+        # Можно сделать подстрочное совпадение, либо сказать, что нет
+        # Для простоты вернём None
+        return None, None
+
+    except Exception as e:
+        logger.error(f"Ошибка GPT при сопоставлении специалиста: {e}")
+        return None, None
+
+
+def parse_time_input(user_input, available_times):
+    """
+    Позволяет пользователю вводить только "10:00", если есть ровно одна дата,
+    и автоматически подставляет эту дату.
+    otherwise — ожидаем полный формат YYYY-MM-DD HH:MM или проверяем GPT.
+    
+    Возвращает строку "YYYY-MM-DD HH:MM" или None, если не распознано.
+    """
+    # Список всех уникальных дат
+    unique_dates = list(set(t.split()[0] for t in available_times))
+
+    # Если пользователь ввёл "HH:MM" (2 двоеточия — 1, если без секунд)
+    if user_input.count(":") == 1 and user_input.count("-") == 0:
+        # Похоже на "10:00", без даты
+        if len(unique_dates) == 1:
+            # Если у нас только одна дата
+            only_date = unique_dates[0]
+            return f"{only_date} {user_input}"
+        else:
+            # Есть несколько дат, пусть уточняет полную дату
+            return None
+
+    # Если пользователь ввёл полное "YYYY-MM-DD HH:MM" и оно точно есть в списке
+    if user_input in available_times:
+        return user_input
+
+    # (Опционально) можно добавить GPT-парсинг "завтра", "на 10:00", "послезавтра"...
+    # Для упрощения примера — вернём None, если нет полного совпадения
+    return None
+
+# =============================================================================
+# Обработка текстовых сообщений (главный вход)
+# =============================================================================
 def handle_message(update, context):
     user_message = update.message.text.strip()
     user_id = update.message.chat_id
 
-    # Регистрируем пользователя (в таблице users)
+    # Регистрируем пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    # Проверяем текущее состояние (user_state)
+    # Проверяем состояние (user_state)
     current_state = get_user_state(user_id)
     if current_state:
         process_booking(update, user_id, user_message, current_state)
         return
 
-    # Если нет состояния, определяем намерение
+    # Если состояния нет — определяем намерение
     intent = determine_intent(user_message)
     if intent == "услуги":
         services = get_services()
@@ -317,6 +418,7 @@ def handle_message(update, context):
         else:
             update.message.reply_text("На данный момент нет доступных специалистов.")
     elif intent == "записаться":
+        # Начинаем сценарий записи
         set_user_state(user_id, step="select_service")
         services = get_services()
         service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
@@ -324,16 +426,18 @@ def handle_message(update, context):
             f"Доступные услуги:\n{service_list}\nВведите название услуги."
         )
     else:
+        # Свободный вопрос — ответим GPT
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Пошаговая логика записи
-# ------------------------------------------------------------------------------
+# =============================================================================
 def process_booking(update, user_id, user_message, state):
     step = state['step']
 
     if step == 'select_service':
+        # Пользователь выбирает услугу
         services = get_services()
         service = next((s for s in services if s[1].lower() == user_message.lower()), None)
         if service:
@@ -347,48 +451,75 @@ def process_booking(update, user_id, user_message, state):
             update.message.reply_text("Такой услуги нет. Попробуйте снова.")
 
     elif step == 'select_specialist':
+        # Пользователь выбирает специалиста
         specialists = get_specialists()
+        # 1) Сначала пробуем exact match
         specialist = next((sp for sp in specialists if sp[1].lower() == user_message.lower()), None)
         if specialist:
+            # Успех
             set_user_state(
-                user_id, 
-                step='select_time', 
+                user_id,
+                step='select_time',
                 specialist_id=specialist[0],
-                service_id=state['service_id']  # перенесём, чтобы не потерять
+                service_id=state['service_id']
             )
             available_times = get_available_times(specialist[0], state['service_id'])
             if available_times:
                 time_list = "\n".join(available_times)
                 update.message.reply_text(
                     f"Доступное время:\n{time_list}\n"
-                    f"Введите удобное время в формате YYYY-MM-DD HH:MM"
+                    f"Введите удобное время в формате YYYY-MM-DD HH:MM или только 'HH:MM' (если дат всего одна)."
                 )
             else:
-                update.message.reply_text("К сожалению, нет свободных слотов для этого мастера. Попробуйте другого.")
-                # Можно сбросить состояние или предложить что-то ещё
+                update.message.reply_text("К сожалению, нет свободных слотов для этого мастера.")
+                delete_user_state(user_id)
+            return
         else:
-            update.message.reply_text("Такого специалиста нет. Попробуйте снова.")
+            # 2) Пробуем GPT для распознавания
+            sp_id, sp_name = match_specialist_with_gpt(user_message, specialists)
+            if sp_id is not None:
+                # Найден мастер через GPT
+                set_user_state(
+                    user_id,
+                    step='select_time',
+                    specialist_id=sp_id,
+                    service_id=state['service_id']
+                )
+                available_times = get_available_times(sp_id, state['service_id'])
+                if available_times:
+                    time_list = "\n".join(available_times)
+                    update.message.reply_text(
+                        f"Похоже, вы имели в виду: {sp_name}\n"
+                        f"Доступное время:\n{time_list}\n"
+                        f"Введите удобное время в формате YYYY-MM-DD HH:MM или только 'HH:MM' (если дат всего одна)."
+                    )
+                else:
+                    update.message.reply_text("К сожалению, у этого мастера нет свободных слотов.")
+                    delete_user_state(user_id)
+            else:
+                update.message.reply_text("Не удалось найти такого специалиста. Попробуйте снова.")
 
     elif step == 'select_time':
-        # Проверяем, ввёл ли пользователь время, которое есть в списке
         service_id = state['service_id']
         specialist_id = state['specialist_id']
         available_times = get_available_times(specialist_id, service_id)
 
-        if user_message in available_times:
-            # Всё ок, переходим к подтверждению
+        # Пробуем «умную» функцию parse_time_input
+        parsed_time = parse_time_input(user_message, available_times)
+        if parsed_time and parsed_time in available_times:
+            # Всё ок, переходим к confirm
             set_user_state(
-                user_id, 
+                user_id,
                 step='confirm',
                 service_id=service_id,
                 specialist_id=specialist_id,
-                chosen_time=user_message
+                chosen_time=parsed_time
             )
             update.message.reply_text(
                 f"Вы выбрали:\n"
                 f"Услуга (ID): {service_id}\n"
                 f"Специалист (ID): {specialist_id}\n"
-                f"Время: {user_message}\n"
+                f"Время: {parsed_time}\n"
                 "Подтвердите запись (да/нет)."
             )
         else:
@@ -396,6 +527,7 @@ def process_booking(update, user_id, user_message, state):
 
     elif step == 'confirm':
         if user_message.lower() == 'да':
+            # Создаём запись
             create_booking(
                 user_id=user_id,
                 service_id=state['service_id'],
@@ -410,37 +542,18 @@ def process_booking(update, user_id, user_message, state):
         else:
             update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
 
-
-
-
-
-
-
-gpt_response = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",
-    messages=[
-        {"role": "system", "content": ("Ты — ассистент, который сопоставляет имя специалиста. "
-                                       "Среди имеющихся вариантов [Анна Иванова, Мария Петрова...] "
-                                       "какой наиболее подходит под ввод: 'анна'? "
-                                       "Верни точное имя или 'None' если не уверено.")},
-        {"role": "user", "content": user_message}
-    ]
-)
-recognized_name = gpt_response['choices'][0]['message']['content']
-
-
-# ------------------------------------------------------------------------------
+# =============================================================================
 # /start команда
-# ------------------------------------------------------------------------------
+# =============================================================================
 def start(update, context):
     update.message.reply_text(
         "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
         "или задайте мне любой вопрос!"
     )
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Flask-маршруты
-# ------------------------------------------------------------------------------
+# =============================================================================
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = telegram.Update.de_json(request.get_json(force=True), bot)
@@ -451,25 +564,24 @@ def webhook():
 def index():
     return "Бот работает!", 200
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Настройка диспетчера
-# ------------------------------------------------------------------------------
-from telegram.ext import Dispatcher
+# =============================================================================
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Регистрация Webhook
-# ------------------------------------------------------------------------------
+# =============================================================================
 def set_webhook():
     webhook_url = f"{APP_URL}/{TOKEN}"
     bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook установлен: {webhook_url}")
 
-# ------------------------------------------------------------------------------
+# =============================================================================
 # Точка входа
-# ------------------------------------------------------------------------------
+# =============================================================================
 if __name__ == "__main__":
     # Инициализация БД (создание таблиц, если их нет)
     init_db()
