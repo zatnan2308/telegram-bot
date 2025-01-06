@@ -67,7 +67,7 @@ def generate_ai_response(prompt):
     """Генерация ответа от OpenAI GPT"""
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo",  # Или "gpt-4"
             messages=[{"role": "user", "content": prompt}],
             max_tokens=150,
             temperature=0.7
@@ -76,9 +76,12 @@ def generate_ai_response(prompt):
     except openai.error.RateLimitError:
         return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
     except openai.error.InvalidRequestError as e:
-        return f"Ошибка: {e}"
+        return f"Ошибка в запросе: {e}"
+    except openai.error.OpenAIError as e:
+        return "Произошла ошибка при обращении к OpenAI API. Попробуйте позже."
     except Exception as e:
-        return f"Произошла ошибка: {e}"
+        return f"Произошла непредвиденная ошибка: {e}"
+
 
 
 # Telegram-обработчики
