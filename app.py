@@ -9,11 +9,11 @@ import openai
 import datetime
 
 # Настройки
-TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота
-DATABASE_URL = os.getenv("DATABASE_URL")  # URL базы данных PostgreSQL
-APP_URL = os.getenv("APP_URL")  # URL приложения
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # API-ключ OpenAI
-MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")  # ID менеджера
+TOKEN = os.getenv("TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+APP_URL = os.getenv("APP_URL")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")
 
 if not TOKEN or not APP_URL or not OPENAI_API_KEY or not MANAGER_CHAT_ID:
     raise ValueError("Переменные окружения 'TOKEN', 'APP_URL', 'OPENAI_API_KEY' и 'MANAGER_CHAT_ID' должны быть установлены.")
@@ -28,114 +28,6 @@ logger = logging.getLogger(__name__)
 # Инициализация бота и Flask-приложения
 bot = telegram.Bot(token=TOKEN)
 app = Flask(__name__)
-
-
-def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI для анализа намерений"""
-    user_message = update.message.text
-    user_id = update.message.chat_id
-
-    # Автоматическая регистрация пользователя
-    register_user(user_id, update.message.chat.first_name)
-
-    # Определяем намерение пользователя
-    intent = determine_intent(user_message)
-    logger.info(f"User message: {user_message}, Intent: {intent}")
-
-    if intent == "услуги":
-        # Получение списка услуг из базы данных
-        services = get_services()
-        if services:
-            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
-            update.message.reply_text(f"Доступные услуги:\n{service_list}")
-        else:
-            update.message.reply_text("На данный момент нет доступных услуг.")
-    elif intent == "специалисты":
-        # Получение списка специалистов из базы данных
-        specialists = get_specialists()
-        if specialists:
-            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
-            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
-        else:
-            update.message.reply_text("На данный момент нет доступных специалистов.")
-    elif intent == "записаться":
-        # Обработка записи
-        update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
-    else:
-        # Ответ через OpenAI для других вопросов
-        bot_response = generate_ai_response(user_message)
-        update.message.reply_text(bot_response)
-
-
-
-
-
-
-
-def generate_ai_response_with_context(user_message):
-    """Генерация ответа от OpenAI с учётом логики услуг и специалистов"""
-    try:
-        # Запрос к OpenAI
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": (
-                    "Ты — Telegram-бот, управляющий записями для салона красоты. "
-                    "Твои данные:\n"
-                    "- Услуги: доступны через функцию get_services().\n"
-                    "- Специалисты: доступны через функцию get_specialists().\n"
-                    "Если пользователь спрашивает о мастерах, услугах или записях, предложи соответствующую информацию из базы данных. "
-                    "Если вопрос общий, ответь, используя свою базу знаний."
-                )},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=200,
-            temperature=0.7
-        )
-        # Возврат ответа ИИ
-        return response['choices'][0]['message']['content'].strip()
-    except openai.error.RateLimitError:
-        return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
-    except Exception as e:
-        return f"Произошла ошибка: {e}"
-
-
-def determine_intent(user_message):
-    """Использует OpenAI для определения намерений пользователя"""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": (
-                    "Ты — Telegram-бот для управления записями. "
-                    "Твоя задача — анализировать запросы пользователей и определять их намерения: "
-                    "'специалисты', 'услуги', 'записаться' или 'другое'. "
-                    "Если пользователь спрашивает о мастерах, специалистах, напиши 'специалисты'. "
-                    "Если он спрашивает о доступных услугах, напиши 'услуги'. "
-                    "Если он хочет записаться, напиши 'записаться'. "
-                    "Если запрос не относится ни к одной из этих категорий, напиши 'другое'."
-                )},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=20,
-            temperature=0.7
-        )
-        intent = response['choices'][0]['message']['content'].strip().lower()
-        logger.info(f"Intent determined: {intent}")
-        return intent
-    except Exception as e:
-        logger.error(f"Error determining intent: {e}")
-        return "другое"
-
-
-
-
-
-
-
-
-
-
 
 # Подключение к базе данных
 def get_db_connection():
@@ -208,87 +100,34 @@ def create_booking(user_id, service_id, specialist_id, date):
     cursor.close()
     conn.close()
 
-# Telegram-обработчики
-def start(update, context):
-    """Обработка команды /start"""
-    user_id = update.message.chat_id
-    name = update.message.chat.first_name
-
-    # Регистрация пользователя
-    register_user(user_id, name)
-
-    update.message.reply_text(
-        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
-        "или задайте мне любой вопрос!"
-    )
-
-def show_services(update, context):
-    """Вывод списка услуг"""
-    services = get_services()
-    if services:
-        service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
-        update.message.reply_text(f"Доступные услуги:\n{service_list}")
-    else:
-        update.message.reply_text("На данный момент нет доступных услуг.")
-
-def show_specialists(update, context):
-    """Вывод списка специалистов"""
-    specialists = get_specialists()
-    if specialists:
-        specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
-        update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
-    else:
-        update.message.reply_text("На данный момент нет доступных специалистов.")
-
-def check_booking(update, context):
-    """Проверка записей пользователя"""
-    user_id = update.message.chat_id
-    bookings = get_bookings_for_user(user_id)
-    if bookings:
-        reply = "Ваши записи:\n" + "\n".join(
-            [f"{b['date']} - {b['service']} (Специалист: {b['specialist']})" for b in bookings]
+# Определение намерения пользователя
+def determine_intent(user_message):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": (
+                    "Ты — Telegram-бот для управления записями. "
+                    "Твоя задача — анализировать запросы пользователей и определять их намерения: "
+                    "'специалисты', 'услуги', 'записаться' или 'другое'. "
+                    "Если пользователь спрашивает о мастерах, специалистах, напиши 'специалисты'. "
+                    "Если он спрашивает о доступных услугах, напиши 'услуги'. "
+                    "Если он хочет записаться, напиши 'записаться'. "
+                    "Если запрос не относится ни к одной из этих категорий, напиши 'другое'."
+                )},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=20,
+            temperature=0.7
         )
-    else:
-        reply = "У вас нет активных записей."
-    update.message.reply_text(reply)
+        intent = response['choices'][0]['message']['content'].strip().lower()
+        logger.info(f"Intent determined: {intent}")
+        return intent
+    except Exception as e:
+        logger.error(f"Error determining intent: {e}")
+        return "другое"
 
-def book_service(update, context):
-    """Создание записи"""
-    user_id = update.message.chat_id
-    service_id = 1  # Пример ID услуги (можно запросить у пользователя)
-    specialist_id = 1  # Пример ID специалиста (можно запросить у пользователя)
-    date = "2025-01-07 14:00:00"  # Пример даты (можно запросить у пользователя)
-
-    create_booking(user_id, service_id, specialist_id, date)
-    update.message.reply_text("Вы успешно записались на услугу!")
-
-def contact_manager(update, context):
-    """Связь с менеджером"""
-    user_id = update.message.chat_id
-    user_message = update.message.text
-    bot.send_message(
-        chat_id=MANAGER_CHAT_ID,
-        text=f"Сообщение от клиента {user_id}:\n{user_message}"
-    )
-    update.message.reply_text("Ваше сообщение было отправлено менеджеру. Мы скоро свяжемся с вами.")
-
-def handle_message(update, context):
-    """Обработка текстовых сообщений"""
-    user_message = update.message.text.lower()
-    user_id = update.message.chat_id
-
-    # Автоматическая регистрация пользователя
-    register_user(user_id, update.message.chat.first_name)
-
-    if "у меня есть запись" in user_message:
-        check_booking(update, context)
-    elif "связаться с менеджером" in user_message:
-        contact_manager(update, context)
-    else:
-        bot_response = generate_ai_response(user_message)
-        update.message.reply_text(bot_response)
-
-# Функция генерации ответа с использованием OpenAI GPT
+# Генерация ответа через OpenAI
 def generate_ai_response(prompt):
     try:
         response = openai.ChatCompletion.create(
@@ -306,6 +145,45 @@ def generate_ai_response(prompt):
     except Exception as e:
         return f"Произошла ошибка: {e}"
 
+# Обработка сообщений пользователя
+def handle_message(update, context):
+    user_message = update.message.text
+    user_id = update.message.chat_id
+
+    # Регистрация пользователя
+    register_user(user_id, update.message.chat.first_name)
+
+    # Определяем намерение
+    intent = determine_intent(user_message)
+    logger.info(f"User message: {user_message}, Intent: {intent}")
+
+    if intent == "услуги":
+        services = get_services()
+        if services:
+            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
+            update.message.reply_text(f"Доступные услуги:\n{service_list}")
+        else:
+            update.message.reply_text("На данный момент нет доступных услуг.")
+    elif intent == "специалисты":
+        specialists = get_specialists()
+        if specialists:
+            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+        else:
+            update.message.reply_text("На данный момент нет доступных специалистов.")
+    elif intent == "записаться":
+        update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
+    else:
+        bot_response = generate_ai_response(user_message)
+        update.message.reply_text(bot_response)
+
+# Telegram-обработчики
+def start(update, context):
+    update.message.reply_text(
+        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
+        "или задайте мне любой вопрос!"
+    )
+
 # Flask-маршруты
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
@@ -320,9 +198,6 @@ def index():
 # Настройка диспетчера
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(CommandHandler("services", show_services))
-dispatcher.add_handler(CommandHandler("specialists", show_specialists))
-dispatcher.add_handler(CommandHandler("book", book_service))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
 # Регистрация Webhook
