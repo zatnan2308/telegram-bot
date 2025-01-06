@@ -3,7 +3,6 @@ import logging
 import telegram
 from telegram import Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackContext
-from apscheduler.schedulers.background import BackgroundScheduler
 import os
 import psycopg2
 import openai
@@ -32,12 +31,46 @@ app = Flask(__name__)
 
 # Подключение к базе данных
 def get_db_connection():
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    return psycopg2.connect(DATABASE_URL)
 
-# Основные функции для работы с базой данных
+# Регистрация пользователя
+def register_user(telegram_id, name, phone="0000000000"):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = """
+    INSERT INTO users (telegram_id, name, phone)
+    VALUES (%s, %s, %s)
+    ON CONFLICT (telegram_id) DO NOTHING;
+    """
+    cursor.execute(query, (telegram_id, name, phone))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Получение списка услуг
+def get_services():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "SELECT id, title FROM services;"
+    cursor.execute(query)
+    services = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return services
+
+# Получение списка специалистов
+def get_specialists():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = "SELECT id, name FROM specialists;"
+    cursor.execute(query)
+    specialists = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return specialists
+
+# Получение записей для пользователя
 def get_bookings_for_user(user_id):
-    """Получение записей для конкретного пользователя"""
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
@@ -46,23 +79,23 @@ def get_bookings_for_user(user_id):
     JOIN services s ON b.service_id = s.id
     JOIN specialists sp ON b.specialist_id = sp.id
     WHERE b.user_id = %s
+    ORDER BY b.date;
     """
     cursor.execute(query, (user_id,))
     bookings = cursor.fetchall()
     cursor.close()
     conn.close()
-
     return [{"date": b[0], "service": b[1], "specialist": b[2]} for b in bookings]
 
-def create_booking(org_id, client_name, client_phone, service_id, specialist_id, date):
-    """Добавление новой записи"""
+# Создание записи
+def create_booking(user_id, service_id, specialist_id, date):
     conn = get_db_connection()
     cursor = conn.cursor()
     query = """
-    INSERT INTO bookings (org_id, client_name, client_phone, service_id, specialist_id, date)
-    VALUES (%s, %s, %s, %s, %s, %s)
+    INSERT INTO bookings (user_id, service_id, specialist_id, date)
+    VALUES (%s, %s, %s, %s);
     """
-    cursor.execute(query, (org_id, client_name, client_phone, service_id, specialist_id, date))
+    cursor.execute(query, (user_id, service_id, specialist_id, date))
     conn.commit()
     cursor.close()
     conn.close()
@@ -70,12 +103,31 @@ def create_booking(org_id, client_name, client_phone, service_id, specialist_id,
 # Telegram-обработчики
 def start(update, context):
     """Обработка команды /start"""
+    user_id = update.message.chat_id
+    name = update.message.chat.first_name
+
+    # Регистрация пользователя
+    register_user(user_id, name)
+
     update.message.reply_text(
         "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
         "или задайте мне любой вопрос!"
     )
 
-def check_booking(update: Update, context: CallbackContext):
+def show_services(update, context):
+    """Вывод списка услуг"""
+    services = get_services()
+    service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
+    update.message.reply_text(f"Доступные услуги:\n{service_list}")
+
+def show_specialists(update, context):
+    """Вывод списка специалистов"""
+    specialists = get_specialists()
+    specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+    update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+
+def check_booking(update, context):
+    """Проверка записей пользователя"""
     user_id = update.message.chat_id
     bookings = get_bookings_for_user(user_id)
     if bookings:
@@ -86,19 +138,33 @@ def check_booking(update: Update, context: CallbackContext):
         reply = "У вас нет активных записей."
     update.message.reply_text(reply)
 
-def contact_manager(update: Update, context: CallbackContext):
+def book_service(update, context):
+    """Создание записи"""
+    user_id = update.message.chat_id
+    service_id = 1  # Пример ID услуги (можно запросить у пользователя)
+    specialist_id = 1  # Пример ID специалиста (можно запросить у пользователя)
+    date = "2025-01-07 14:00:00"  # Пример даты (можно запросить у пользователя)
+
+    create_booking(user_id, service_id, specialist_id, date)
+    update.message.reply_text("Вы успешно записались на услугу!")
+
+def contact_manager(update, context):
+    """Связь с менеджером"""
     user_id = update.message.chat_id
     user_message = update.message.text
-    context.bot.send_message(
+    bot.send_message(
         chat_id=MANAGER_CHAT_ID,
         text=f"Сообщение от клиента {user_id}:\n{user_message}"
     )
     update.message.reply_text("Ваше сообщение было отправлено менеджеру. Мы скоро свяжемся с вами.")
 
 def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI GPT и локальной логики"""
+    """Обработка текстовых сообщений"""
     user_message = update.message.text.lower()
     user_id = update.message.chat_id
+
+    # Автоматическая регистрация пользователя
+    register_user(user_id, update.message.chat.first_name)
 
     if "у меня есть запись" in user_message:
         check_booking(update, context)
@@ -108,12 +174,11 @@ def handle_message(update, context):
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
 
-# Функция для генерации ответа с использованием OpenAI GPT
+# Функция генерации ответа с использованием OpenAI GPT
 def generate_ai_response(prompt):
-    """Генерация ответа от OpenAI GPT"""
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
                 {"role": "user", "content": prompt}
@@ -130,24 +195,24 @@ def generate_ai_response(prompt):
 # Flask-маршруты
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    """Маршрут для обработки запросов Telegram"""
     update = telegram.Update.de_json(request.get_json(force=True), bot)
     dispatcher.process_update(update)
     return "OK", 200
 
 @app.route("/", methods=["GET"])
 def index():
-    """Главная страница для проверки работы приложения"""
     return "Бот работает!", 200
 
 # Настройка диспетчера
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(CommandHandler("services", show_services))
+dispatcher.add_handler(CommandHandler("specialists", show_specialists))
+dispatcher.add_handler(CommandHandler("book", book_service))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
 # Регистрация Webhook
 def set_webhook():
-    """Устанавливает Webhook для Telegram API"""
     webhook_url = f"{APP_URL}/{TOKEN}"
     bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook установлен: {webhook_url}")
