@@ -9,12 +9,17 @@ import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-response = openai.Completion.create(
-    engine="text-davinci-003",
-    prompt="Привет, как дела?",
-    max_tokens=50
+response = openai.ChatCompletion.create(
+    model="gpt-3.5-turbo",  # Или "gpt-4" для более мощной модели
+    messages=[
+        {"role": "system", "content": "Ты — умный Telegram-бот. Помогай пользователю."},
+        {"role": "user", "content": "Привет, как дела?"}
+    ],
+    max_tokens=150,
+    temperature=0.7
 )
-print(response.choices[0].text.strip())
+print(response['choices'][0]['message']['content'].strip())
+
 
 # Настройки
 TOKEN = os.getenv("7050106108:AAHBb7a_CgSx1VFNrbqn1OiVO5xB_GriiEk")  # Токен Telegram-бота из переменных окружения Render
