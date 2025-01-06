@@ -71,23 +71,29 @@ def get_specialists():
 
 # Определение намерения пользователя через OpenAI
 def determine_intent(user_message):
+    """Использует OpenAI для определения намерений пользователя"""
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": (
-                    "Ты - Telegram-бот для управления записями. "
-                    "Твоя задача - определять намерения пользователя, такие как 'услуги', 'специалисты', 'записаться', или 'другое'."
+                    "Ты — Telegram-бот для управления записями. "
+                    "Определяй запрос пользователя как одно из намерений: 'услуги', 'специалисты', 'записаться', или 'другое'. "
+                    "Если запрос связан с услугами, возвращай 'услуги'. "
+                    "Если связан со специалистами, возвращай 'специалисты'. "
+                    "Если пользователь хочет записаться, возвращай 'записаться'. "
+                    "Для остальных запросов возвращай 'другое'."
                 )},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=20
+            max_tokens=10,
+            temperature=0.5
         )
-        intent = response['choices'][0]['message']['content'].strip().lower()
-        return intent
+        return response['choices'][0]['message']['content'].strip().lower()
     except Exception as e:
         logger.error(f"Ошибка определения намерения: {e}")
         return "другое"
+
 
 # Генерация ответа через OpenAI
 def generate_ai_response(prompt):
