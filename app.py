@@ -7,45 +7,14 @@ import os
 import psycopg2
 import openai
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Генерация ответа с использованием новой модели
-def generate_ai_response(prompt):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
-            messages=[
-                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
-        return f"Ошибка: {e}"
-
-def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI GPT"""
-    user_message = update.message.text
-    
-    # Получаем ответ от OpenAI
-    bot_response = generate_ai_response(user_message)
-    
-    # Отправляем ответ пользователю
-    update.message.reply_text(bot_response)
-dispatcher = Dispatcher(bot, None, workers=0)
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-
-
 # Настройки
 TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL базы данных PostgreSQL
 APP_URL = os.getenv("APP_URL")  # URL приложения
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # API-ключ OpenAI
 
-if not TOKEN or not APP_URL:
-    raise ValueError("Переменные окружения 'TOKEN' и 'APP_URL' должны быть установлены.")
+if not TOKEN or not APP_URL or not OPENAI_API_KEY:
+    raise ValueError("Переменные окружения 'TOKEN', 'APP_URL' и 'OPENAI_API_KEY' должны быть установлены.")
 
 # Инициализация OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -94,17 +63,20 @@ def get_bookings_for_specialist(specialist_id):
     conn.close()
     return bookings
 
-# Функции для работы с ИИ
+# Функция для генерации ответа с использованием OpenAI GPT
 def generate_ai_response(prompt):
     """Генерация ответа от OpenAI GPT"""
     try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",  # Модель OpenAI
-            prompt=prompt,
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
+            messages=[
+                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
+                {"role": "user", "content": prompt}
+            ],
             max_tokens=150,
             temperature=0.7
         )
-        return response.choices[0].text.strip()
+        return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         return f"Ошибка: {e}"
 
@@ -117,13 +89,12 @@ def start(update, context):
     )
 
 def handle_message(update, context):
-    """Обработка текстовых сообщений с помощью ИИ"""
+    """Обработка текстовых сообщений с использованием OpenAI GPT"""
     user_message = update.message.text
-
+    
     # Если пользователь хочет записаться
     if "записаться" in user_message.lower():
         update.message.reply_text("На какую услугу вы хотите записаться?")
-        # Логика для записи может быть добавлена здесь
     elif "мои записи" in user_message.lower():
         # Пример получения записей для специалиста
         specialist_id = 1  # Подставьте ID специалиста из базы
