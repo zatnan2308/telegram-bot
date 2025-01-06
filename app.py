@@ -40,6 +40,7 @@ def handle_message(update, context):
 
     # Определяем намерение пользователя
     intent = determine_intent(user_message)
+    logger.info(f"User message: {user_message}, Intent: {intent}")
 
     if intent == "услуги":
         # Получение списка услуг из базы данных
@@ -64,6 +65,7 @@ def handle_message(update, context):
         # Ответ через OpenAI для других вопросов
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
+
 
 
 
@@ -118,9 +120,13 @@ def determine_intent(user_message):
             max_tokens=20,
             temperature=0.7
         )
-        return response['choices'][0]['message']['content'].strip().lower()
+        intent = response['choices'][0]['message']['content'].strip().lower()
+        logger.info(f"Intent determined: {intent}")
+        return intent
     except Exception as e:
+        logger.error(f"Error determining intent: {e}")
         return "другое"
+
 
 
 
