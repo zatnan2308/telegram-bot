@@ -9,23 +9,21 @@ import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-
-
+# Генерация ответа с использованием новой модели
 def generate_ai_response(prompt):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=50,
+            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
+            messages=[
+                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
             temperature=0.7
         )
         return response['choices'][0]['message']['content'].strip()
-    except openai.error.RateLimitError:
-        return "Извините, я временно не могу ответить. Попробуйте позже."
     except Exception as e:
-        return f"Произошла ошибка: {e}"
-
-
+        return f"Ошибка: {e}"
 
 # Настройки
 TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота
