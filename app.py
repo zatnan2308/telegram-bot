@@ -9,16 +9,22 @@ import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-response = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",  # Или "gpt-4" для более мощной модели
-    messages=[
-        {"role": "system", "content": "Ты — умный Telegram-бот. Помогай пользователю."},
-        {"role": "user", "content": "Привет, как дела?"}
-    ],
-    max_tokens=150,
-    temperature=0.7
-)
-print(response['choices'][0]['message']['content'].strip())
+
+
+def generate_ai_response(prompt):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=50,
+            temperature=0.7
+        )
+        return response['choices'][0]['message']['content'].strip()
+    except openai.error.RateLimitError:
+        return "Извините, я временно не могу ответить. Попробуйте позже."
+    except Exception as e:
+        return f"Произошла ошибка: {e}"
+
 
 
 # Настройки
