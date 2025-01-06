@@ -6,7 +6,7 @@ from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 
 # Настройки
 TOKEN = "7050106108:AAHBb7a_CgSx1VFNrbqn1OiVO5xB_GriiEk"  # Замените на ваш токен Telegram-бота
-APP_URL = "https://your-render-url.onrender.com"  # Замените на ваш URL, предоставленный Render
+APP_URL = "https://telegram-bot-jnle.onrender.com"  # Замените на ваш URL, предоставленный Render
 
 # Логгер
 logging.basicConfig(
