@@ -7,6 +7,15 @@ import os
 import psycopg2
 import openai
 
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+response = openai.Completion.create(
+    engine="text-davinci-003",
+    prompt="Привет, как дела?",
+    max_tokens=50
+)
+print(response.choices[0].text.strip())
+
 # Настройки
 TOKEN = os.getenv("7050106108:AAHBb7a_CgSx1VFNrbqn1OiVO5xB_GriiEk")  # Токен Telegram-бота из переменных окружения Render
 DATABASE_URL = os.getenv("postgresql://telegram_bot_db_m0yt_user:Mb7sLI6eTJqaewWfSeitowpxUhue2l6s@dpg-cttkgbd2ng1s73ca4g1g-a/telegram_bot_db_m0yt")  # URL базы данных PostgreSQL из Render
