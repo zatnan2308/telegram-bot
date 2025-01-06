@@ -3,23 +3,18 @@ import logging
 import telegram
 from telegram import Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
-
-# Настройки
-TOKEN = "7050106108:AAHBb7a_CgSx1VFNrbqn1OiVO5xB_GriiEk"  # Замените на ваш токен Telegram-бота
-APP_URL = "https://telegram-bot-jnle.onrender.com"  # Замените на ваш URL, предоставленный Render
-
-from flask import Flask, request
-import logging
-import telegram
-from telegram import Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import os
 import psycopg2
+import openai
 
 # Настройки
 TOKEN = os.getenv("7050106108:AAHBb7a_CgSx1VFNrbqn1OiVO5xB_GriiEk")  # Токен Telegram-бота из переменных окружения Render
 DATABASE_URL = os.getenv("postgresql://telegram_bot_db_m0yt_user:Mb7sLI6eTJqaewWfSeitowpxUhue2l6s@dpg-cttkgbd2ng1s73ca4g1g-a/telegram_bot_db_m0yt")  # URL базы данных PostgreSQL из Render
 APP_URL = os.getenv("https://telegram-bot-jnle.onrender.com")  # URL приложения на Render
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # API-ключ OpenAI
+
+# Инициализация OpenAI
+openai.api_key = OPENAI_API_KEY
 
 # Логгер
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -65,22 +60,39 @@ def get_bookings_for_specialist(specialist_id):
     conn.close()
     return bookings
 
+# Функции для работы с ИИ
+def generate_ai_response(prompt):
+    """Генерация ответа от OpenAI GPT"""
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-003",  # Модель OpenAI
+            prompt=prompt,
+            max_tokens=150,
+            temperature=0.7
+        )
+        return response.choices[0].text.strip()
+    except Exception as e:
+        return f"Ошибка: {e}"
+
 # Telegram-обработчики
 def start(update, context):
     """Обработка команды /start"""
     update.message.reply_text(
-        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись."
+        "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, "
+        "или задайте мне любой вопрос!"
     )
 
 def handle_message(update, context):
-    """Обработка текстовых сообщений"""
-    user_message = update.message.text.lower()
-    if user_message == "записаться":
-        # Здесь вы можете добавить логику выбора услуги, специалиста и времени
+    """Обработка текстовых сообщений с помощью ИИ"""
+    user_message = update.message.text
+
+    # Если пользователь хочет записаться
+    if "записаться" in user_message.lower():
         update.message.reply_text("На какую услугу вы хотите записаться?")
-    elif user_message == "мои записи":
-        # Получение записей для специалиста
-        specialist_id = 1  # Здесь подставьте реальный ID специалиста (например, из базы)
+        # Логика для записи может быть добавлена здесь
+    elif "мои записи" in user_message.lower():
+        # Пример получения записей для специалиста
+        specialist_id = 1  # Подставьте ID специалиста из базы
         bookings = get_bookings_for_specialist(specialist_id)
         if bookings:
             reply = "Ваши записи:\n" + "\n".join(
@@ -90,7 +102,9 @@ def handle_message(update, context):
             reply = "У вас нет предстоящих записей."
         update.message.reply_text(reply)
     else:
-        update.message.reply_text("Я не понимаю ваше сообщение. Попробуйте написать 'Записаться'.")
+        # Используем OpenAI для ответа
+        bot_response = generate_ai_response(user_message)
+        update.message.reply_text(bot_response)
 
 # Flask-маршруты
 @app.route(f"/{TOKEN}", methods=["POST"])
