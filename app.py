@@ -63,22 +63,23 @@ def get_bookings_for_specialist(specialist_id):
     conn.close()
     return bookings
 
-# Функция для генерации ответа с использованием OpenAI GPT
 def generate_ai_response(prompt):
     """Генерация ответа от OpenAI GPT"""
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
-            messages=[
-                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
-                {"role": "user", "content": prompt}
-            ],
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=150,
             temperature=0.7
         )
         return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
+    except openai.error.RateLimitError:
+        return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
+    except openai.error.InvalidRequestError as e:
         return f"Ошибка: {e}"
+    except Exception as e:
+        return f"Произошла ошибка: {e}"
+
 
 # Telegram-обработчики
 def start(update, context):
