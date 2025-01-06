@@ -14,6 +14,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 APP_URL = os.getenv("APP_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")
+# Состояния для записи
+user_booking_state = {}
+
 
 if not TOKEN or not APP_URL or not OPENAI_API_KEY or not MANAGER_CHAT_ID:
     raise ValueError("Переменные окружения 'TOKEN', 'APP_URL', 'OPENAI_API_KEY' и 'MANAGER_CHAT_ID' должны быть установлены.")
@@ -113,42 +116,95 @@ def generate_ai_response(prompt):
 
 def handle_message(update, context):
     """Обработка текстовых сообщений с использованием OpenAI и базы данных"""
+    global user_booking_state  # Объявляем глобальную переменную
     user_message = update.message.text.lower()
     user_id = update.message.chat_id
 
     # Регистрация пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    # Проверяем намерение
-    intent = determine_intent(user_message)
-    logger.info(f"User message: {user_message}, Determined intent: {intent}")
+    # Проверяем, находится ли пользователь в процессе записи
+    if user_id in user_booking_state:
+        process_booking(update, user_id, user_message)
+        return
 
+    # Определяем намерение пользователя
+    intent = determine_intent(user_message)
     if intent == "услуги":
-        # Получение списка услуг из базы данных
         services = get_services()
         if services:
-            service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
+            service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
             update.message.reply_text(f"Доступные услуги:\n{service_list}")
         else:
             update.message.reply_text("На данный момент нет доступных услуг.")
     elif intent == "специалисты":
-        # Получение списка специалистов из базы данных
         specialists = get_specialists()
         if specialists:
-            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+            specialist_list = "\n".join([f"{s[0]}. {s[1]}" for s in specialists])
             update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
         else:
             update.message.reply_text("На данный момент нет доступных специалистов.")
     elif intent == "записаться":
-        # Логика записи
         user_booking_state[user_id] = {'step': 'select_service'}
         services = get_services()
         service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
         update.message.reply_text(f"Доступные услуги:\n{service_list}\nВведите название услуги.")
     else:
-        # Если намерение не определено, используем OpenAI для общего ответа
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
+
+
+
+
+
+def process_booking(update, user_id, user_message):
+    """Обработка процесса записи"""
+    global user_booking_state
+    state = user_booking_state[user_id]
+
+    if state['step'] == 'select_service':
+        services = get_services()
+        service = next((s for s in services if s[1].lower() == user_message.lower()), None)
+        if service:
+            state['service_id'] = service[0]
+            state['step'] = 'select_specialist'
+            specialists = get_specialists()
+            specialist_list = "\n".join([f"{s[0]}. {s[1]}" for s in specialists])
+            update.message.reply_text(f"Вы выбрали услугу: {service[1]}\nПожалуйста, выберите специалиста:\n{specialist_list}")
+        else:
+            update.message.reply_text("Такой услуги нет. Попробуйте снова.")
+    elif state['step'] == 'select_specialist':
+        specialists = get_specialists()
+        specialist = next((s for s in specialists if s[1].lower() == user_message.lower()), None)
+        if specialist:
+            state['specialist_id'] = specialist[0]
+            state['step'] = 'select_time'
+            available_times = get_available_times(state['specialist_id'], state['service_id'])
+            time_list = "\n".join(available_times)
+            update.message.reply_text(f"Доступное время:\n{time_list}\nВведите удобное время.")
+        else:
+            update.message.reply_text("Такого специалиста нет. Попробуйте снова.")
+    elif state['step'] == 'select_time':
+        available_times = get_available_times(state['specialist_id'], state['service_id'])
+        if user_message in available_times:
+            state['date'] = user_message
+            state['step'] = 'confirm'
+            update.message.reply_text(f"Вы выбрали:\nУслуга: {state['service_id']}\nСпециалист: {state['specialist_id']}\nВремя: {state['date']}\nПодтвердите запись (да/нет).")
+        else:
+            update.message.reply_text("Неправильное время. Попробуйте снова.")
+    elif state['step'] == 'confirm':
+        if user_message.lower() == 'да':
+            create_booking(user_id, state['service_id'], state['specialist_id'], state['date'])
+            update.message.reply_text("Запись успешно создана! Спасибо!")
+            del user_booking_state[user_id]
+        elif user_message.lower() == 'нет':
+            update.message.reply_text("Запись отменена.")
+            del user_booking_state[user_id]
+        else:
+            update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+
+
+
 
 
 # Telegram-обработчики
