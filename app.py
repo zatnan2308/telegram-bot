@@ -410,6 +410,25 @@ def process_booking(update, user_id, user_message, state):
         else:
             update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
 
+
+
+
+
+
+
+gpt_response = openai.ChatCompletion.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "system", "content": ("Ты — ассистент, который сопоставляет имя специалиста. "
+                                       "Среди имеющихся вариантов [Анна Иванова, Мария Петрова...] "
+                                       "какой наиболее подходит под ввод: 'анна'? "
+                                       "Верни точное имя или 'None' если не уверено.")},
+        {"role": "user", "content": user_message}
+    ]
+)
+recognized_name = gpt_response['choices'][0]['message']['content']
+
+
 # ------------------------------------------------------------------------------
 # /start команда
 # ------------------------------------------------------------------------------
