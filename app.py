@@ -31,33 +31,38 @@ app = Flask(__name__)
 
 
 def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI GPT и базы данных"""
-    user_message = update.message.text.lower()
+    """Обработка текстовых сообщений с использованием OpenAI для анализа намерений"""
+    user_message = update.message.text
     user_id = update.message.chat_id
 
     # Автоматическая регистрация пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    # Генерация ответа ИИ
-    bot_response = generate_ai_response_with_context(user_message)
+    # Определяем намерение пользователя
+    intent = determine_intent(user_message)
 
-    # Проверка на команды от ИИ
-    if "специалисты" in bot_response.lower():
-        specialists = get_specialists()
-        if specialists:
-            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
-            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
-        else:
-            update.message.reply_text("На данный момент нет доступных специалистов.")
-    elif "услуги" in bot_response.lower():
+    if intent == "услуги":
+        # Получение списка услуг из базы данных
         services = get_services()
         if services:
             service_list = "\n".join([f"{service[0]}. {service[1]}" for service in services])
             update.message.reply_text(f"Доступные услуги:\n{service_list}")
         else:
             update.message.reply_text("На данный момент нет доступных услуг.")
+    elif intent == "специалисты":
+        # Получение списка специалистов из базы данных
+        specialists = get_specialists()
+        if specialists:
+            specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
+            update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
+        else:
+            update.message.reply_text("На данный момент нет доступных специалистов.")
+    elif intent == "записаться":
+        # Обработка записи
+        update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
     else:
-        # Ответ на другие вопросы
+        # Ответ через OpenAI для других вопросов
+        bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
 
 
@@ -92,6 +97,29 @@ def generate_ai_response_with_context(user_message):
         return f"Произошла ошибка: {e}"
 
 
+def determine_intent(user_message):
+    """Использует OpenAI для определения намерений пользователя"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": (
+                    "Ты — Telegram-бот для управления записями. "
+                    "Твоя задача — анализировать запросы пользователей и определять, к какой категории они относятся: "
+                    "'специалисты', 'услуги', 'записаться', или 'другое'. "
+                    "Если пользователь спрашивает о мастерах, специалистах, напиши 'специалисты'. "
+                    "Если он спрашивает о доступных услугах, напиши 'услуги'. "
+                    "Если он хочет записаться, напиши 'записаться'. "
+                    "Если запрос не относится ни к одной из этих категорий, напиши 'другое'."
+                )},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=20,
+            temperature=0.7
+        )
+        return response['choices'][0]['message']['content'].strip().lower()
+    except Exception as e:
+        return "другое"  # Если произошла ошибка, возвращаем "другое"
 
 
 
