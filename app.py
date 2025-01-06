@@ -35,10 +35,11 @@ def handle_message(update, context):
     user_message = update.message.text.lower()
     user_id = update.message.chat_id
 
-    # Регистрация пользователя
+    # Автоматическая регистрация пользователя
     register_user(user_id, update.message.chat.first_name)
 
-    if "какие услуги есть" in user_message:
+    # Проверка на запрос услуг
+    if any(keyword in user_message for keyword in ["какие услуги есть", "услуги", "доступные услуги"]):
         # Получение списка услуг из базы данных
         services = get_services()
         if services:
@@ -46,20 +47,26 @@ def handle_message(update, context):
             update.message.reply_text(f"Доступные услуги:\n{service_list}")
         else:
             update.message.reply_text("На данный момент нет доступных услуг.")
-    elif "специалисты" in user_message:
-        # Получение списка специалистов
+
+    # Проверка на запрос специалистов
+    elif any(keyword in user_message for keyword in ["какие специалисты есть", "специалисты", "мастера", "мастер"]):
+        # Получение списка специалистов из базы данных
         specialists = get_specialists()
         if specialists:
             specialist_list = "\n".join([f"{specialist[0]}. {specialist[1]}" for specialist in specialists])
             update.message.reply_text(f"Доступные специалисты:\n{specialist_list}")
         else:
             update.message.reply_text("На данный момент нет доступных специалистов.")
+
+    # Обработка запроса на запись
     elif "записаться" in user_message:
         update.message.reply_text("Пожалуйста, выберите услугу и специалиста, чтобы записаться.")
+
+    # Обработка других вопросов через OpenAI
     else:
-        # Ответ через OpenAI
         bot_response = generate_ai_response(user_message)
         update.message.reply_text(bot_response)
+
 
 
 
