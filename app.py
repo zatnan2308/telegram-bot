@@ -33,6 +33,25 @@ def get_db_connection():
     return conn
 
 # Основные функции для работы с базой данных
+def get_bookings_for_user(user_id):
+    """Получение записей для конкретного пользователя"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    query = """
+    SELECT b.date, s.title AS service, sp.name AS specialist
+    FROM bookings b
+    JOIN services s ON b.service_id = s.id
+    JOIN specialists sp ON b.specialist_id = sp.id
+    WHERE b.user_id = %s
+    """
+    cursor.execute(query, (user_id,))
+    bookings = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    # Преобразуем записи в удобный формат
+    return [{"date": b[0], "service": b[1], "specialist": b[2]} for b in bookings]
+
 def create_booking(org_id, client_name, client_phone, service_id, specialist_id, date):
     """Добавление новой записи"""
     conn = get_db_connection()
@@ -46,43 +65,24 @@ def create_booking(org_id, client_name, client_phone, service_id, specialist_id,
     cursor.close()
     conn.close()
 
-def get_bookings_for_specialist(specialist_id):
-    """Получение записей для специалиста"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    query = """
-    SELECT b.date, s.title AS service, b.client_name, b.client_phone
-    FROM bookings b
-    JOIN services s ON b.service_id = s.id
-    WHERE b.specialist_id = %s AND b.date >= NOW()
-    ORDER BY b.date
-    """
-    cursor.execute(query, (specialist_id,))
-    bookings = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return bookings
-
+# Функция для генерации ответа с использованием OpenAI GPT
 def generate_ai_response(prompt):
     """Генерация ответа от OpenAI GPT"""
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Или "gpt-4"
-            messages=[{"role": "user", "content": prompt}],
+            model="gpt-3.5-turbo",  # Или "gpt-4", если требуется более мощная модель
+            messages=[
+                {"role": "system", "content": "Ты — умный Telegram-бот, помогай пользователю."},
+                {"role": "user", "content": prompt}
+            ],
             max_tokens=150,
             temperature=0.7
         )
         return response['choices'][0]['message']['content'].strip()
     except openai.error.RateLimitError:
         return "Извините, я временно не могу обработать ваш запрос. Попробуйте позже."
-    except openai.error.InvalidRequestError as e:
-        return f"Ошибка в запросе: {e}"
-    except openai.error.OpenAIError as e:
-        return "Произошла ошибка при обращении к OpenAI API. Попробуйте позже."
     except Exception as e:
-        return f"Произошла непредвиденная ошибка: {e}"
-
-
+        return f"Произошла ошибка: {e}"
 
 # Telegram-обработчики
 def start(update, context):
@@ -93,22 +93,19 @@ def start(update, context):
     )
 
 def handle_message(update, context):
-    """Обработка текстовых сообщений с использованием OpenAI GPT"""
-    user_message = update.message.text
-    
-    # Если пользователь хочет записаться
-    if "записаться" in user_message.lower():
-        update.message.reply_text("На какую услугу вы хотите записаться?")
-    elif "мои записи" in user_message.lower():
-        # Пример получения записей для специалиста
-        specialist_id = 1  # Подставьте ID специалиста из базы
-        bookings = get_bookings_for_specialist(specialist_id)
+    """Обработка текстовых сообщений с использованием OpenAI GPT и локальной логики"""
+    user_message = update.message.text.lower()
+    user_id = update.message.chat_id
+
+    # Если пользователь спрашивает про свои записи
+    if "у меня есть запись" in user_message:
+        bookings = get_bookings_for_user(user_id)
         if bookings:
             reply = "Ваши записи:\n" + "\n".join(
-                [f"{b[0]} - {b[1]} (Клиент: {b[2]}, Телефон: {b[3]})" for b in bookings]
+                [f"{b['date']} - {b['service']} (Специалист: {b['specialist']})" for b in bookings]
             )
         else:
-            reply = "У вас нет предстоящих записей."
+            reply = "У вас нет записей."
         update.message.reply_text(reply)
     else:
         # Используем OpenAI для ответа
