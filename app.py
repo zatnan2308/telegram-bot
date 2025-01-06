@@ -25,6 +25,19 @@ def generate_ai_response(prompt):
     except Exception as e:
         return f"Ошибка: {e}"
 
+def handle_message(update, context):
+    """Обработка текстовых сообщений с использованием OpenAI GPT"""
+    user_message = update.message.text
+    
+    # Получаем ответ от OpenAI
+    bot_response = generate_ai_response(user_message)
+    
+    # Отправляем ответ пользователю
+    update.message.reply_text(bot_response)
+dispatcher = Dispatcher(bot, None, workers=0)
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+
+
 # Настройки
 TOKEN = os.getenv("TOKEN")  # Токен Telegram-бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL базы данных PostgreSQL
