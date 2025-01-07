@@ -267,10 +267,14 @@ def create_booking(user_id, serv_id, spec_id, date_str):
 def find_service_in_text(user_text):
     services = get_services()
     user_text_lower = user_text.lower()
+    logger.info(f"Поиск услуги в тексте: {user_text_lower}")
     for (s_id, s_title) in services:
+        logger.info(f"Проверка услуги: {s_title.lower()}")
         if s_title.lower() in user_text_lower:
+            logger.info(f"Найдена услуга: {s_title}")
             return (s_id, s_title)
     return None
+
 
 def parse_time_input(user_text, available_times):
     if not available_times:
