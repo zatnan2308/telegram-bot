@@ -471,6 +471,15 @@ def handle_message(update, context):
 # =============================================================================
 def process_booking(update, user_id, user_text, state):
     step = state['step']
+    if step == "select_service":
+    # Новое условие для запроса повторения списка услуг
+    if "услуги" in user_text:
+        services = get_services()
+        service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+        update.message.reply_text(f"Доступные услуги:\n{service_list}")
+        return
+    ...
+
 
     # Если вдруг пользователь заново пишет "хочу ..."
     if "хочу" in user_text:
