@@ -1,14 +1,14 @@
 -- create_all.sql
 
 -- 1. Таблица users (основная для хранения пользователей)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY,
     name VARCHAR(100),
     phone VARCHAR(20)
 );
 
 -- 2. Таблица user_state (хранение шагов сценария записи)
-CREATE TABLE user_state (
+CREATE TABLE IF NOT EXISTS user_state (
     user_id BIGINT PRIMARY KEY,
     step VARCHAR(50),
     service_id INT,
@@ -20,19 +20,28 @@ CREATE TABLE user_state (
 );
 
 -- 3. Таблица services (список услуг)
-CREATE TABLE services (
+CREATE TABLE IF NOT EXISTS services (
     id SERIAL PRIMARY KEY,
     title VARCHAR(100) NOT NULL
 );
 
 -- 4. Таблица specialists (список мастеров)
-CREATE TABLE specialists (
+CREATE TABLE IF NOT EXISTS specialists (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL
 );
 
--- 5. Таблица booking_times (слоты для записи, с флагом is_booked)
-CREATE TABLE booking_times (
+-- 5. Таблица specialist_services (связь специалистов с услугами)
+CREATE TABLE IF NOT EXISTS specialist_services (
+    specialist_id INT NOT NULL,
+    service_id INT NOT NULL,
+    PRIMARY KEY (specialist_id, service_id),
+    FOREIGN KEY (specialist_id) REFERENCES specialists(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+);
+
+-- 6. Таблица booking_times (слоты для записи, с флагом is_booked)
+CREATE TABLE IF NOT EXISTS booking_times (
     id SERIAL PRIMARY KEY,
     specialist_id INT NOT NULL,
     service_id INT NOT NULL,
@@ -46,8 +55,8 @@ CREATE TABLE booking_times (
       ON DELETE CASCADE
 );
 
--- 6. Таблица bookings (фактические записи)
-CREATE TABLE bookings (
+-- 7. Таблица bookings (фактические записи)
+CREATE TABLE IF NOT EXISTS bookings (
     id SERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     service_id INT NOT NULL,
@@ -60,7 +69,7 @@ CREATE TABLE bookings (
     CONSTRAINT fk_b_specialist FOREIGN KEY (specialist_id) REFERENCES specialists (id) ON DELETE CASCADE
 );
 
--- (Опционально) Вставим тестовые услуги и специалистов:
+-- 8. Вставка тестовых услуг
 INSERT INTO services (title) VALUES
 ('Косметический массаж'),
 ('Чистка лица'),
@@ -71,16 +80,35 @@ INSERT INTO services (title) VALUES
 ('Дермапланирование'),
 ('Микронидлинг');
 
+-- 9. Вставка тестовых специалистов
 INSERT INTO specialists (name) VALUES
 ('Анна Иванова'),
 ('Мария Петрова'),
 ('Светлана Смирнова'),
 ('Ольга Сидорова');
 
--- Если хотите, можете добавить тестовые слоты в booking_times:
--- Пример:
--- INSERT INTO booking_times (specialist_id, service_id, slot_time)
--- VALUES
---   (1, 2, '2025-01-08 10:00'),
---   (1, 2, '2025-01-08 12:00'),
---   (1, 2, '2025-01-08 14:00');
+-- 10. Связывание специалистов с услугами
+INSERT INTO specialist_services (specialist_id, service_id) VALUES
+(1, 1), -- Анна Иванова предлагает Косметический массаж
+(1, 2), -- Анна Иванова предлагает Чистка лица
+(2, 2), -- Мария Петрова предлагает Чистка лица
+(2, 3), -- Мария Петрова предлагает Микродермабразия
+(3, 4), -- Светлана Смирнова предлагает Химический пилинг
+(3, 5), -- Светлана Смирнова предлагает Уход за кожей для мужчин
+(4, 6), -- Ольга Сидорова предлагает Гидрафейшл
+(4, 7), -- Ольга Сидорова предлагает Дермапланирование
+(4, 8); -- Ольга Сидорова предлагает Микронидлинг
+
+-- 11. Вставка тестовых слотов в booking_times
+-- Предположим, что каждый слот представляет 1 час и уже не забронирован
+INSERT INTO booking_times (specialist_id, service_id, slot_time) VALUES
+(1, 1, '2025-01-08 10:00'),
+(1, 1, '2025-01-08 11:00'),
+(1, 2, '2025-01-08 12:00'),
+(2, 2, '2025-01-08 10:00'),
+(2, 3, '2025-01-08 11:00'),
+(3, 4, '2025-01-08 10:00'),
+(3, 5, '2025-01-08 11:00'),
+(4, 6, '2025-01-08 10:00'),
+(4, 7, '2025-01-08 11:00'),
+(4, 8, '2025-01-08 12:00');
