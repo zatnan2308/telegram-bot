@@ -338,69 +338,90 @@ def handle_message(update, context):
     user_id = update.message.chat_id
     user_name = update.message.chat.first_name or "Unknown"
 
+    # Специальная обработка точных запросов на список услуг
+    if user_text in ["какие есть услуги?", "какие услуги?", "список услуг"]:
+        services = get_services()
+        if services:
+            txt = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+            update.message.reply_text(f"Доступные услуги:\n{txt}")
+        else:
+            update.message.reply_text("На данный момент нет услуг.")
+        return
+
+    # Регистрация пользователя
     register_user(user_id, user_name)
 
-    # Специальная обработка запросов
-    if "какие" in user_text and "услуги" in user_text:
-        # Проверка, спрашивает ли пользователь о всех услугах или о конкретном специалисте
-        if "у" in user_text:
-            # Предполагается, что пользователь спрашивает о конкретном специалисте
-            # Извлечём имя специалиста
-            system_prompt = (
-                "Ты — ассистент, который извлекает имя специалиста из пользовательского запроса. "
-                "Введи только имя специалиста или 'None', если не уверен."
-            )
-            user_prompt = user_text
-            try:
-                resp = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    max_tokens=50,
-                    temperature=0.3
-                )
-                specialist_name = resp['choices'][0]['message']['content'].strip()
-                if specialist_name.lower() == "none" or not specialist_name:
-                    update.message.reply_text("Не удалось определить специалиста. Пожалуйста, уточните запрос.")
-                    return
-                # Найдём специалиста по имени
-                specialists = get_specialists()
-                matched_specialist = next((sp for sp in specialists if sp[1].lower() == specialist_name.lower()), None)
-                if not matched_specialist:
-                    update.message.reply_text(f"Специалист '{specialist_name}' не найден.")
-                    return
-                # Получим услуги этого специалиста
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT s.title
-                    FROM services s
-                    JOIN specialist_services ss ON s.id = ss.service_id
-                    WHERE ss.specialist_id = %s
-                """, (matched_specialist[0],))
-                services = cur.fetchall()
-                cur.close()
-                conn.close()
-                if services:
-                    service_list = "\n".join([f"- {s[0]}" for s in services])
-                    update.message.reply_text(f"Услуги специалиста {matched_specialist[1]}:\n{service_list}")
-                else:
-                    update.message.reply_text(f"Специалист {matched_specialist[1]} не предлагает никаких услуг.")
-            except Exception as e:
-                logger.error(f"Ошибка при обработке запроса о специалисте: {e}")
-                update.message.reply_text("Произошла ошибка при обработке вашего запроса.")
-        else:
-            # Пользователь спрашивает о всех услугах
-            services = get_services()
-            unique_services = sorted({s[1] for s in services})
-            if unique_services:
-                service_list = "\n".join([f"- {s}" for s in unique_services])
-                update.message.reply_text(f"Доступные услуги:\n{service_list}")
-            else:
-                update.message.reply_text("На данный момент нет услуг.")
+    # Проверка наличия текущего состояния пользователя
+    st = get_user_state(user_id)
+    if st:
+        process_booking(update, user_id, user_text, st)
         return
+
+    # Определение намерения пользователя через GPT, если нет состояния
+    intent_data = determine_intent(user_text)
+    intent = intent_data.get("intent", "UNKNOWN")
+    entities = intent_data.get("entities", {})
+
+    if intent == "LIST_SERVICES":
+        services = get_services()
+        unique_services = sorted({s[1] for s in services})
+        if unique_services:
+            service_list = "\n".join([f"- {s}" for s in unique_services])
+            update.message.reply_text(f"Доступные услуги:\n{service_list}")
+        else:
+            update.message.reply_text("На данный момент нет услуг.")
+    elif intent == "LIST_SPECIALIST_SERVICES":
+        specialist_name = entities.get("specialist_name", "").strip()
+        if not specialist_name:
+            update.message.reply_text("Не удалось определить специалиста. Пожалуйста, уточните запрос.")
+            return
+        specialists = get_specialists()
+        matched_specialist = next((sp for sp in specialists if sp[1].lower() == specialist_name.lower()), None)
+        if not matched_specialist:
+            update.message.reply_text(f"Специалист '{specialist_name}' не найден.")
+            return
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT s.title
+            FROM services s
+            JOIN specialist_services ss ON s.id = ss.service_id
+            WHERE ss.specialist_id = %s
+        """, (matched_specialist[0],))
+        services = cur.fetchall()
+        cur.close()
+        conn.close()
+        if services:
+            service_list = "\n".join([f"- {s[0]}" for s in services])
+            update.message.reply_text(f"Услуги специалиста {matched_specialist[1]}:\n{service_list}")
+        else:
+            update.message.reply_text(f"Специалист {matched_specialist[1]} не предлагает никаких услуг.")
+    elif intent == "BOOK_SERVICE":
+        service_title = entities.get("service_title", "").strip()
+        if not service_title:
+            update.message.reply_text("Не удалось определить услугу. Пожалуйста, уточните запрос.")
+            return
+        services = get_services()
+        matched_service = next((s for s in services if s[1].lower() == service_title.lower()), None)
+        if not matched_service:
+            update.message.reply_text(f"Услуга '{service_title}' не найдена.")
+            return
+        specialists = get_specialists(service_id=matched_service[0])
+        if not specialists:
+            update.message.reply_text("Нет специалистов, предлагающих эту услугу.")
+            return
+        set_user_state(user_id, "select_specialist", service_id=matched_service[0])
+        sp_text = "\n".join([f"{sp[0]}. {sp[1]}" for sp in specialists])
+        update.message.reply_text(
+            f"Вы выбрали услугу: {matched_service[1]}\n"
+            f"Пожалуйста, выберите специалиста:\n{sp_text}"
+        )
+    elif intent == "UNKNOWN":
+        bot_resp = generate_ai_response(user_text)
+        update.message.reply_text(bot_resp)
+    else:
+        update.message.reply_text("Извините, я не понял ваш запрос. Пожалуйста, попробуйте снова.")
+
 
     # Проверка наличия текущего состояния пользователя
     st = get_user_state(user_id)
