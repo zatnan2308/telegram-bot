@@ -525,22 +525,25 @@ def process_booking(update, user_id, user_message, state):
         else:
             update.message.reply_text("Неправильное или занятое время. Попробуйте снова.")
 
-    elif step == 'confirm':
-        if user_message.lower() == 'да':
-            # Создаём запись
-            create_booking(
-                user_id=user_id,
-                service_id=state['service_id'],
-                specialist_id=state['specialist_id'],
-                date_str=state['chosen_time']
-            )
-            update.message.reply_text("Запись успешно создана! Спасибо!")
+   elif step == 'confirm':
+    # Если пользователь написал "да"
+    if user_message.lower() == 'да':
+        ...
+    # Если пользователь написал "нет"
+    elif user_message.lower() == 'нет':
+        ...
+    else:
+        # Проверяем, не "хочу" ли он что-то новое
+        if "хочу" in user_message.lower():
+            # Сбрасываем старую запись и начинаем заново
             delete_user_state(user_id)
-        elif user_message.lower() == 'нет':
-            update.message.reply_text("Запись отменена.")
-            delete_user_state(user_id)
+            # И, например, сразу set_user_state(... "select_service") 
+            update.message.reply_text("Хорошо, начнём новое бронирование!")
+            # ... вызываем логику заново
         else:
+            # Старое поведение
             update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+
 
 # =============================================================================
 # /start команда
