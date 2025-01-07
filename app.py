@@ -471,19 +471,10 @@ def handle_message(update, context):
 # =============================================================================
 def process_booking(update, user_id, user_text, state):
     step = state['step']
-    if step == "select_service":
-    # Новое условие для запроса повторения списка услуг
-    if "услуги" in user_text:
-        services = get_services()
-        service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
-        update.message.reply_text(f"Доступные услуги:\n{service_list}")
-        return
-    ...
-
 
     # Если вдруг пользователь заново пишет "хочу ..."
     if "хочу" in user_text:
-        # Сброс и заново
+        # Сброс и начало заново
         delete_user_state(user_id)
         found = find_service_in_text(user_text)
         if found:
@@ -507,9 +498,14 @@ def process_booking(update, user_id, user_text, state):
             )
         return
 
-    # Шаги
     if step == "select_service":
-        # Пользователь вводит название услуги
+        # Проверка запроса на повтор списка услуг по ключевым словам
+        if "повтори" in user_text or "какие услуги" in user_text or "услуги" in user_text:
+            services = get_services()
+            service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+            update.message.reply_text(f"Доступные услуги:\n{service_list}")
+            return
+
         services = get_services()
         service = next((s for s in services if s[1].lower() == user_text), None)
         if service:
@@ -521,7 +517,38 @@ def process_booking(update, user_id, user_text, state):
                 f"Пожалуйста, выберите специалиста:\n{sp_text}"
             )
         else:
-            update.message.reply_text("Такой услуги нет. Попробуйте снова.")
+            # Используем GPT для определения, хочет ли пользователь повторить список услуг
+            system_prompt = (
+                "Ты — эксперт в распознавании запросов на повторение списка услуг "
+                "в контексте бронирования услуг."
+            )
+            user_prompt = (
+                f"Пользователь на этапе выбора услуги ввёл: '{user_text}'. "
+                "Определи, что он просит повторить список услуг. "
+                "Ответь коротко 'да', если это запрос на повтор списка, иначе 'нет'."
+            )
+            try:
+                resp = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=10,
+                    temperature=0.3
+                )
+                answer = resp['choices'][0]['message']['content'].strip().lower()
+            except Exception as e:
+                logger.error(f"Ошибка GPT проверки услуги: {e}")
+                answer = ""
+
+            if "да" in answer or "повтор" in answer:
+                services = get_services()
+                service_list = "\n".join([f"{s[0]}. {s[1]}" for s in services])
+                update.message.reply_text(f"Доступные услуги:\n{service_list}")
+            else:
+                update.message.reply_text("Такой услуги нет. Попробуйте снова.")
+
 
     elif step == "select_specialist":
         # Exact match
