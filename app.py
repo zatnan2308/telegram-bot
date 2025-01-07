@@ -298,13 +298,14 @@ def create_booking(user_id, serv_id, spec_id, date_str):
     SET is_booked = TRUE
     WHERE specialist_id = %s
       AND service_id = %s
-      AND slot_time = %s
-    """, (spec_id, serv_id, chosen_dt))
-    # Вставляем запись
+      AND slot_time >= %s
+      AND slot_time < %s + interval '1 hour'
+    """, (spec_id, serv_id, chosen_dt, chosen_dt))
+    # Вставляем запись в bookings для выбранного времени
     cur.execute("""
     INSERT INTO bookings (user_id, service_id, specialist_id, date_time)
     VALUES (%s, %s, %s, %s)
-    """,(user_id, serv_id, spec_id, chosen_dt))
+    """, (user_id, serv_id, spec_id, chosen_dt))
     conn.commit()
     cur.close()
     conn.close()
