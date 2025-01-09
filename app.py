@@ -495,9 +495,13 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
     GPT-блок, который по контексту возвращает JSON с action + response + extracted_data.
     Затем мы обрабатываем action.
     """
-   if state and state.get('step') == 'confirm':
-       action = "CONFIRM_BOOKING"
-       pass
+
+    # Если уже на этапе 'confirm', принудительно ставим action = "CONFIRM_BOOKING"
+    if state and state.get('step') == 'confirm':
+        action = "CONFIRM_BOOKING"
+        # Можно поставить pass или сразу вернуться, 
+        # в зависимости от вашей логики
+        pass
     
     system_prompt = """
     Ты — ассистент по бронированию услуг в салоне красоты. 
