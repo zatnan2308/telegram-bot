@@ -263,26 +263,33 @@ def find_service_by_name(user_text):
                 service = services[0]
             elif len(services) > 1:
                 # Если нашли несколько совпадений, используем GPT для выбора наиболее подходящего
-                system_prompt = f"""
-                Выбери наиболее подходящую услугу из списка на основе запроса клиента.
-                Запрос клиента: {user_text}
-                Доступные услуги: {[s[1] for s in services]}
-                
-                Верни только название выбранной услуги или None, если нет подходящей.
-                """
-                
-                response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_text}
-                    ],
-                    temperature=0.3
+                system_prompt = (
+                    f"Выбери одну наиболее подходящую услугу из списка на основе запроса клиента.\n"
+                    f"Запрос клиента: {user_text}\n"
+                    f"Доступные услуги: {[s[1] for s in services]}\n"
+                    "Верни только название выбранной услуги без дополнительного текста."
                 )
                 
-                selected_service = response.choices[0].message.content.strip()
-                if selected_service and selected_service != "None":
-                    service = next((s for s in services if s[1].lower() == selected_service.lower()), None)
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_text}
+                        ],
+                        temperature=0.3,
+                        max_tokens=50
+                    )
+                    
+                    selected_service = response.choices[0].message.content.strip()
+                    if selected_service and selected_service.lower() != "none":
+                        service = next(
+                            (s for s in services if s[1].lower() == selected_service.lower()),
+                            services[0]  # Если GPT вернул что-то непонятное, берем первую услугу
+                        )
+                except Exception as e:
+                    logger.error(f"Ошибка GPT при выборе услуги: {e}")
+                    service = services[0]  # В случае ошибки GPT берем первую услугу
         
         return service
     
@@ -493,35 +500,60 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                 )
 
         elif action == "SELECT_TIME":
-            if not state or not all(k in state for k in ['service_id', 'specialist_id']):
-                update.message.reply_text("Сначала выберите услугу и специалиста.")
-                return
+    if not state or not all(k in state for k in ['service_id', 'specialist_id']):
+        update.message.reply_text("Сначала выберите услугу и специалиста.")
+        return
 
-            chosen_time = extracted_data.get('time')
-            available_times = get_available_times(state['specialist_id'], state['service_id'])
+    available_times = get_available_times(state['specialist_id'], state['service_id'])
+    chosen_time = None
+    
+    # Проверяем время из GPT
+    gpt_time = extracted_data.get('time')
+    if gpt_time and gpt_time in available_times:
+        chosen_time = gpt_time
+    
+    # Если GPT не смог определить время, пробуем другие варианты
+    if not chosen_time:
+        if "на" in user_text.lower():
+            # Извлекаем имя специалиста и время из текста
+            text_parts = user_text.lower().split("на")
+            specialist_part = text_parts[0].strip()
+            time_part = text_parts[1].strip()
             
-            if chosen_time and chosen_time in available_times:
-                set_user_state(
-                    user_id,
-                    "confirm",
-                    service_id=state['service_id'],
-                    specialist_id=state['specialist_id'],
-                    chosen_time=chosen_time
-                )
-                service_name = get_service_name(state['service_id'])
-                specialist_name = get_specialist_name(state['specialist_id'])
-                update.message.reply_text(
-                    f"Подтвердите запись:\n\n"
-                    f"🎯 Услуга: {service_name}\n"
-                    f"👩‍💼 Специалист: {specialist_name}\n"
-                    f"📅 Время: {chosen_time}\n\n"
-                    "Для подтверждения напишите 'да' или 'нет' для отмены."
-                )
-            else:
-                times_text = "\n".join([f"🕐 {t}" for t in available_times])
-                update.message.reply_text(
-                    f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
-                )
+            # Проверяем, что выбранный специалист совпадает с текущим
+            specialist_name = get_specialist_name(state['specialist_id'])
+            if specialist_name and specialist_name.lower() in specialist_part.lower():
+                # Ищем подходящее время
+                for av_time in available_times:
+                    if time_part in av_time or time_part.replace(":", "") in av_time:
+                        chosen_time = av_time
+                        break
+        else:
+            # Пробуем стандартный парсинг времени
+            chosen_time = parse_time_input(user_text, available_times)
+
+    if chosen_time and chosen_time in available_times:
+        set_user_state(
+            user_id,
+            "confirm",
+            service_id=state['service_id'],
+            specialist_id=state['specialist_id'],
+            chosen_time=chosen_time
+        )
+        service_name = get_service_name(state['service_id'])
+        specialist_name = get_specialist_name(state['specialist_id'])
+        update.message.reply_text(
+            f"Подтвердите запись:\n\n"
+            f"🎯 Услуга: {service_name}\n"
+            f"👩‍💼 Специалист: {specialist_name}\n"
+            f"📅 Время: {chosen_time}\n\n"
+            "Для подтверждения напишите 'да' или 'нет' для отмены."
+        )
+    else:
+        times_text = "\n".join([f"🕐 {t}" for t in available_times])
+        update.message.reply_text(
+            f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
+        )
 
         elif action == "CONFIRM_BOOKING":
             if not state or not all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
