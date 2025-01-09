@@ -381,25 +381,59 @@ def generate_ai_response(prompt):
 ###############################################################################
 def parse_time_input(user_text, available_times):
     """
-    Пытается распознать время из user_text:
-     - если формат HH:MM (и есть одна дата), подставляет эту дату
-     - если user_text == YYYY-MM-DD HH:MM и оно есть в списке available_times
-       возвращает user_text
-    Иначе возвращает None
+    Пытается распознать время из user_text и вернуть
+    точный слот вида 'YYYY-MM-DD HH:MM', если есть в available_times.
     """
     if not available_times:
         return None
+
+    # Если пользователь ввёл только «12» — считаем, что возможно имелось в виду «12:00».
+    # При этом, если в available_times только ОДНА уникальная дата, подставляем её.
+    # Например, если available_times = ['2025-01-08 12:00'], а user_text = '12'
+    # => интерпретируем как '2025-01-08 12:00'.
+
+    # Уникальные даты, извлекаем "YYYY-MM-DD" из списка
     unique_dates = list({ t.split()[0] for t in available_times })
+
+    # 1) Если пользователь ввёл «12» (только число)
+    cleaned = user_text.strip().lower()
+    if cleaned.isdigit():
+        # Пробуем интерпретировать как час
+        hour_str = cleaned  # например '12'
+        # Если это целое число от 0 до 23
+        try:
+            hour = int(hour_str)
+            if 0 <= hour <= 23:
+                # Превращаем в 'HH:MM'
+                time_part = f"{hour:02d}:00"
+                # Если в available_times только ОДНА уникальная дата
+                if len(unique_dates) == 1:
+                    # подставляем единственную дату
+                    only_date = unique_dates[0]
+                    candidate = f"{only_date} {time_part}"
+                    if candidate in available_times:
+                        return candidate
+                # иначе пользователь должен ввести полную дату
+                return None
+        except ValueError:
+            pass  # не число
+
+    # 2) Если пользователь ввёл что-то в стиле «12:00»
     if user_text.count(":") == 1 and user_text.count("-") == 0:
+        # Если одна дата
         if len(unique_dates) == 1:
             only_date = unique_dates[0]
             candidate = f"{only_date} {user_text}"
             if candidate in available_times:
                 return candidate
         return None
+
+    # 3) Если пользователь ввёл полный слот формата 'YYYY-MM-DD HH:MM'
     if user_text in available_times:
         return user_text
+
     return None
+
 
 ###############################################################################
 #          match_specialist_with_gpt и find_available_specialist
@@ -649,7 +683,11 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             if not state or not all(k in state for k in ['service_id','specialist_id','chosen_time']):
                 update.message.reply_text("Недостаточно информации для записи.")
                 return
-            if user_text.lower() in ['да','yes','подтверждаю']:
+
+            # Приводим к нижнему регистру и «чистим» пробелы/точки
+            confirmation_text = user_text.strip().lower().strip('.,!')
+    
+            if user_text.lower() in ['да','yes','подтверждаю', 'ок', 'конечно']:
                 ok = create_booking(
                     user_id, 
                     state['service_id'], 
@@ -670,11 +708,11 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     # Уведомление менеджеру
                     if MANAGER_CHAT_ID:
                         manager_msg = (
-                            "🆕 Новая запись!\n\n"
-                            f"Услуга: {sname}\n"
-                            f"Мастер: {spname}\n"
-                            f"Время: {dt_str}\n"
-                            f"Клиент ID: {user_id}"
+                            f"🆕 Новая запись!\n\n"
+                            f"🎯 Услуга: {sname}\n"
+                            f"👩‍💼 Мастер: {spname}\n"
+                            f"📅 Время: {dt_str}\n"
+                            f"👤 Клиент ID: {user_id}"
                         )
                         bot.send_message(MANAGER_CHAT_ID, manager_msg)
                 else:
