@@ -962,16 +962,17 @@ def process_booking(update, user_id, user_text, state):
 
     chosen_time = extracted_data.get('time')
     available_times = get_available_times(state['specialist_id'], state['service_id'])
-    
+
     if chosen_time and chosen_time in available_times:
-            set_user_state(user_id, "confirm", service_id=serv_id, specialist_id=spec_id, chosen_time=chosen_time)
-            srv_name = get_service_name(serv_id)
-            sp_name = get_specialist_name(spec_id)
-            update.message.reply_text(
-                f"Вы выбрали:\nУслуга: {srv_name}\nСпециалист: {sp_name}\nВремя: {chosen_time}\nПодтвердите запись (да/нет)."
-            )
-        else:
-            update.message.reply_text("Неправильное или занятое время. Попробуйте снова.")
+        set_user_state(user_id, "confirm", service_id=serv_id, specialist_id=spec_id, chosen_time=chosen_time)
+        srv_name = get_service_name(serv_id)
+        sp_name = get_specialist_name(spec_id)
+        update.message.reply_text(
+            f"Вы выбрали:\nУслуга: {srv_name}\nСпециалист: {sp_name}\nВремя: {chosen_time}\nПодтвердите запись (да/нет)."
+        )
+    else:
+        update.message.reply_text("Неправильное или занятое время. Попробуйте снова.")
+
 
     elif step == "confirm":
         if user_text in ["да", "да.", "yes", "yes."]:
