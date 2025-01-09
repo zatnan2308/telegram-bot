@@ -148,16 +148,20 @@ def get_specialist_name(spec_id):
 
 def determine_intent(user_message):
     system_prompt = (
-        "Ты — Telegram-бот для управления записями. Определи намерение пользователя и извлеки сущности из его сообщения. "
-        "Возможные намерения: LIST_SERVICES, LIST_SPECIALIST_SERVICES, BOOK_SERVICE, UNKNOWN. "
-        "Сущности могут включать 'specialist_name'. Отвечай в формате JSON без пояснений."
+        "Ты — Telegram-бот для управления записями. "
+        "Если пользователь пытается выбрать специалиста во время процесса записи, "
+        "всегда возвращай intent: 'SELECT_SPECIALIST'. "
+        "Возможные намерения: SELECT_SPECIALIST, SPECIALIST_QUESTION, BOOKING_INTENT, UNKNOWN. "
+        "Верни ответ строго в формате JSON: "
+        "{'intent': 'тип намерения', 'confidence': число от 0 до 1, "
+        "'extracted_info': {'specialist': 'имя специалиста если есть'}}"
     )
     try:
         resp = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role":"system","content":system_prompt},
-                {"role":"user","content":user_message}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
             ],
             max_tokens=100,
             temperature=0
@@ -166,7 +170,11 @@ def determine_intent(user_message):
         return json.loads(response_content)
     except Exception as e:
         logger.error(f"Ошибка определения намерения через GPT: {e}")
-        return {"intent": "UNKNOWN"}
+        return {
+            "intent": "UNKNOWN",
+            "confidence": 0.0,
+            "extracted_info": {}
+        }
 
 def generate_ai_response(prompt):
     try:
@@ -541,6 +549,11 @@ def handle_message(update, context):
             update.message.reply_text("Процесс записи отменён. Можете начать заново.")
             return
 
+        # Если пользователь находится в процессе выбора специалиста
+        if state and state['step'] == 'select_specialist':
+            handle_booking_with_gpt(update, user_id, user_text, state)
+            return
+
         # Анализ намерения пользователя через GPT
         system_prompt = """
         Ты — ассистент салона красоты. Определи намерение пользователя:
@@ -579,33 +592,20 @@ def handle_message(update, context):
 
             # Обработка различных намерений
             if intent_data['intent'] == "BOOKING_INTENT":
-                # Передаем в основной обработчик бронирования
                 handle_booking_with_gpt(update, user_id, user_text, state)
-                
             elif intent_data['intent'] == "CANCEL_INTENT":
-                # Обработка отмены записи
                 handle_cancellation(update, user_id, intent_data['extracted_info'])
-                
             elif intent_data['intent'] == "RESCHEDULE_INTENT":
-                # Обработка переноса записи
                 handle_reschedule(update, user_id, intent_data['extracted_info'])
-                
             elif intent_data['intent'] == "PRICE_QUESTION":
-                # Ответ на вопрос о ценах
                 handle_price_question(update, user_id, intent_data['extracted_info'])
-                
             elif intent_data['intent'] == "SPECIALIST_QUESTION":
-                # Информация о специалистах
                 handle_specialist_question(update, user_id, intent_data['extracted_info'])
-                
             elif intent_data['intent'] == "GENERAL_QUESTION":
-                # Обработка общих вопросов через GPT
                 handle_general_question(update, user_id, user_text)
-                
             else:
-                # Общий ответ через GPT
-                response = generate_ai_response(user_text)
-                update.message.reply_text(response)
+                # Если намерение не определено, передаем в обработчик бронирования
+                handle_booking_with_gpt(update, user_id, user_text, state)
 
         except json.JSONDecodeError:
             logger.error("Ошибка парсинга JSON от GPT")
@@ -616,6 +616,8 @@ def handle_message(update, context):
         update.message.reply_text(
             "Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте позже или напишите /start"
         )
+
+
 
 # Вспомогательные функции для обработки различных намерений
 def handle_cancellation(update, user_id, extracted_info):
@@ -991,22 +993,20 @@ def get_specialist_info(specialist_name):
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT s.id, s.name, s.specialization, s.experience,
+            SELECT s.id, s.name,
                    STRING_AGG(srv.title, ', ') as services
             FROM specialists s
             LEFT JOIN specialist_services ss ON s.id = ss.specialist_id
             LEFT JOIN services srv ON ss.service_id = srv.id
             WHERE LOWER(s.name) LIKE LOWER(%s)
-            GROUP BY s.id, s.name, s.specialization, s.experience
+            GROUP BY s.id, s.name
         """, (f"%{specialist_name}%",))
         row = cur.fetchone()
         if row:
             return {
                 'id': row[0],
                 'name': row[1],
-                'specialization': row[2],
-                'experience': row[3],
-                'services': row[4]
+                'services': row[2]
             }
         return None
     finally:
@@ -1126,7 +1126,7 @@ def cancel_booking(user_id, booking_id):
         conn.close()
 
 
-
+# ++++++=
 
 
 # =============================================================================
