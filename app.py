@@ -425,23 +425,33 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                 service = find_service_by_name(service_name)
                 if service:
                     service_id, service_name = service
+                    # Сначала найдем всех специалистов с доступным временем
                     specialists = get_specialists(service_id=service_id)
-                    if specialists:
+                    available_specialists = []
+                    
+                    for spec in specialists:
+                        available_times = get_available_times(spec[0], service_id)
+                        if available_times:
+                            available_specialists.append((spec, available_times))
+                    
+                    if available_specialists:
                         set_user_state(user_id, "select_specialist", service_id=service_id)
-                        specialists_info = []
-                        for spec in specialists:
-                            available_times = get_available_times(spec[0], service_id)
-                            if available_times:
-                                specialists_info.append(f"👩‍💼 {spec[1]}\n   Доступное время:\n   " + 
-                                                     "\n   ".join([f"🕐 {t}" for t in available_times]))
+                        response_text = f"Для услуги '{service_name}' доступны следующие специалисты:\n\n"
                         
-                        if specialists_info:
-                            update.message.reply_text(
-                                f"Для услуги '{service_name}' доступны следующие специалисты:\n\n" +
-                                "\n\n".join(specialists_info)
-                            )
-                        else:
-                            update.message.reply_text("К сожалению, нет доступного времени у специалистов.")
+                        for spec, times in available_specialists:
+                            response_text += f"👩‍💼 {spec[1]}\n   Доступное время:\n   "
+                            response_text += "\n   ".join([f"🕐 {t}" for t in times[:5]])  # Показываем первые 5 слотов
+                            if len(times) > 5:
+                                response_text += "\n   ... и другие слоты"
+                            response_text += "\n\n"
+                        
+                        response_text += "Пожалуйста, выберите специалиста."
+                        update.message.reply_text(response_text)
+                    else:
+                        update.message.reply_text(
+                            "К сожалению, сейчас нет свободного времени для этой услуги. "
+                            "Попробуйте выбрать другую услугу или свяжитесь с администратором."
+                        )
                 else:
                     services = get_services()
                     service_list = "\n".join([f"- {s[1]}" for s in services])
@@ -465,10 +475,12 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             specialists = get_specialists(state['service_id'])
             
             if specialist_name:
+                # Улучшенный поиск специалиста
                 specialist = next(
-                    (s for s in specialists if s[1].lower() == specialist_name.lower()),
+                    (s for s in specialists if specialist_name.lower() in s[1].lower()),
                     None
                 )
+                
                 if specialist:
                     available_times = get_available_times(specialist[0], state['service_id'])
                     if available_times:
@@ -478,15 +490,27 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                             service_id=state['service_id'],
                             specialist_id=specialist[0]
                         )
-                        times_text = "\n".join([f"- {t}" for t in available_times])
+                        times_text = "\n".join([f"🕐 {t}" for t in available_times])
                         update.message.reply_text(
-                            f"{gpt_response_text}\n\n"
-                            f"Доступное время:\n{times_text}"
+                            f"Вы выбрали специалиста: {specialist[1]}\n\n"
+                            f"Доступное время:\n{times_text}\n\n"
+                            "Пожалуйста, выберите удобное время."
                         )
                     else:
-                        update.message.reply_text(
-                            f"К сожалению, у специалиста {specialist[1]} нет свободного времени."
-                        )
+                        # Поиск альтернативного специалиста
+                        alternative = find_available_specialist(state['service_id'], specialist[0])
+                        if alternative:
+                            alt_times = get_available_times(alternative[0], state['service_id'])
+                            update.message.reply_text(
+                                f"К сожалению, у специалиста {specialist[1]} нет свободного времени.\n"
+                                f"Но вы можете записаться к {alternative[1]}:\n\n" +
+                                "\n".join([f"🕐 {t}" for t in alt_times])
+                            )
+                        else:
+                            update.message.reply_text(
+                                "К сожалению, сейчас нет свободного времени у специалистов. "
+                                "Попробуйте позже или выберите другую услугу."
+                            )
                 else:
                     specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
                     update.message.reply_text(
@@ -501,13 +525,7 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
 
         elif action == "SELECT_TIME":
             if not state or not all(k in state for k in ['service_id', 'specialist_id']):
-                services = get_services()
-                if services:
-                    services_text = "\n".join([f"- {s[1]}" for s in services])
-                    update.message.reply_text(
-                        "Сначала выберите услугу из списка:\n\n"
-                        f"{services_text}"
-                    )
+                update.message.reply_text("Сначала выберите услугу и специалиста.")
                 return
 
             available_times = get_available_times(state['specialist_id'], state['service_id'])
@@ -515,14 +533,11 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             if not available_times:
                 alternative_specialist = find_available_specialist(state['service_id'], state['specialist_id'])
                 if alternative_specialist:
-                    set_user_state(
-                        user_id,
-                        "select_specialist",
-                        service_id=state['service_id']
-                    )
+                    alt_times = get_available_times(alternative_specialist[0], state['service_id'])
                     update.message.reply_text(
-                        "К сожалению, у выбранного специалиста нет свободного времени.\n"
-                        f"Вы можете записаться к {alternative_specialist[1]}. Хотите посмотреть доступное время?"
+                        f"К сожалению, у выбранного специалиста нет свободного времени.\n"
+                        f"Вы можете записаться к {alternative_specialist[1]}:\n\n" +
+                        "\n".join([f"🕐 {t}" for t in alt_times])
                     )
                 else:
                     update.message.reply_text(
@@ -574,22 +589,49 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                 if success:
                     service_name = get_service_name(state['service_id'])
                     specialist_name = get_specialist_name(state['specialist_id'])
-                    update.message.reply_text(f"{gpt_response_text}")
+                    
+                    # Форматируем дату и время для отображения
+                    try:
+                        date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
+                        formatted_date = date_time.strftime("%d.%m.%Y")
+                        formatted_time = date_time.strftime("%H:%M")
+                    except ValueError:
+                        formatted_date = state['chosen_time'].split()[0]
+                        formatted_time = state['chosen_time'].split()[1]
+                    
+                    confirmation_message = (
+                        "✅ Ваша запись успешно подтверждена!\n\n"
+                        f"🎯 Услуга: {service_name}\n"
+                        f"👩‍💼 Мастер: {specialist_name}\n"
+                        f"📅 Дата: {formatted_date}\n"
+                        f"⏰ Время: {formatted_time}\n\n"
+                        "ℹ️ Если вам потребуется изменить или отменить запись, "
+                        "просто напишите об этом в чат.\n\n"
+                        "👋 Будем рады видеть вас!"
+                    )
+                    update.message.reply_text(confirmation_message)
                     
                     if MANAGER_CHAT_ID:
-                        bot.send_message(
-                            MANAGER_CHAT_ID,
-                            f"Новая запись!\n"
-                            f"Услуга: {service_name}\n"
-                            f"Специалист: {specialist_name}\n"
-                            f"Время: {state['chosen_time']}\n"
-                            f"Клиент ID: {user_id}"
+                        manager_message = (
+                            "🆕 Новая запись!\n\n"
+                            f"🎯 Услуга: {service_name}\n"
+                            f"👩‍💼 Мастер: {specialist_name}\n"
+                            f"📅 Дата: {formatted_date}\n"
+                            f"⏰ Время: {formatted_time}\n"
+                            f"👤 Клиент ID: {user_id}"
                         )
+                        bot.send_message(MANAGER_CHAT_ID, manager_message)
                 else:
-                    update.message.reply_text("Произошла ошибка при создании записи. Пожалуйста, попробуйте позже.")
+                    update.message.reply_text(
+                        "❌ Произошла ошибка при создании записи.\n"
+                        "Пожалуйста, попробуйте позже или свяжитесь с администратором."
+                    )
                 delete_user_state(user_id)
             else:
-                update.message.reply_text(f"{gpt_response_text}")
+                update.message.reply_text(
+                    "❌ Запись отменена.\n"
+                    "Если хотите записаться на другое время, напишите 'Записаться'."
+                )
                 delete_user_state(user_id)
 
         elif action == "CANCEL_BOOKING":
@@ -607,7 +649,6 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
         update.message.reply_text(
             "Произошла ошибка. Пожалуйста, попробуйте сформулировать ваш запрос иначе или начните сначала."
         )
-
 
 
 
