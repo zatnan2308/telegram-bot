@@ -492,38 +492,36 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     f"Доступные специалисты:\n{specialists_text}"
                 )
 
-        elif action == "SELECT_TIME":
-            if not state or not all(k in state for k in ['service_id', 'specialist_id']):
-                update.message.reply_text("Сначала выберите услугу и специалиста.")
-                return
+       elif action == "SELECT_TIME":
+    if not state or not all(k in state for k in ['service_id', 'specialist_id']):
+        update.message.reply_text("Сначала выберите услугу и специалиста.")
+        return
 
-            chosen_time = extracted_data.get('time')
-            available_times = get_available_times(state['specialist_id'], state['service_id'])
-            
-            if chosen_time and chosen_time in available_times:
-                set_user_state(
-                    user_id,
-                    "confirm",
-                    service_id=state['service_id'],
-                    specialist_id=state['specialist_id'],
-                    chosen_time=chosen_time
-                )
-                service_name = get_service_name(state['service_id'])
-                specialist_name = get_specialist_name(state['specialist_id'])
-                update.message.reply_text(
-                    f"{gpt_response_text}\n\n"
-                    f"Подтвердите запись:\n"
-                    f"Услуга: {service_name}\n"
-                    f"Специалист: {specialist_name}\n"
-                    f"Время: {chosen_time}\n\n"
-                    "Для подтверждения напишите 'да' или 'нет' для отмены."
-                )
-            else:
-                times_text = "\n".join([f"- {t}" for t in available_times])
-                update.message.reply_text(
-                    f"{gpt_response_text}\n\n"
-                    f"Доступное время:\n{times_text}"
-                )
+    chosen_time = extracted_data.get('time')
+    available_times = get_available_times(state['specialist_id'], state['service_id'])
+    
+    if chosen_time and chosen_time in available_times:
+        set_user_state(
+            user_id,
+            "confirm",  # Меняем шаг на confirm
+            service_id=state['service_id'],
+            specialist_id=state['specialist_id'],
+            chosen_time=chosen_time  # Добавляем выбранное время
+        )
+        service_name = get_service_name(state['service_id'])
+        specialist_name = get_specialist_name(state['specialist_id'])
+        update.message.reply_text(
+            f"Подтвердите запись:\n\n"
+            f"🎯 Услуга: {service_name}\n"
+            f"👩‍💼 Специалист: {specialist_name}\n"
+            f"📅 Время: {chosen_time}\n\n"
+            "Для подтверждения напишите 'да' или 'нет' для отмены."
+        )
+    else:
+        times_text = "\n".join([f"🕐 {t}" for t in available_times])
+        update.message.reply_text(
+            f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
+        )
 
         elif action == "CONFIRM_BOOKING":
             if not state or not all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
