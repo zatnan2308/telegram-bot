@@ -563,7 +563,8 @@ def handle_message(update, context):
         4. RESCHEDULE_INTENT - намерение перенести запись
         5. PRICE_QUESTION - вопрос о ценах
         6. SPECIALIST_QUESTION - вопрос о специалистах
-        7. OTHER - другое
+        7. SERVICE_QUESTION - вопрос об услугах
+        8. OTHER - другое
 
         Ответ дай в формате JSON:
         {
@@ -590,24 +591,24 @@ def handle_message(update, context):
             intent_data = json.loads(intent_response.choices[0].message.content)
             logger.info(f"Определено намерение для user_id={user_id}: {intent_data}")
 
-        # Обработка различных намерений
-if intent_data['intent'] == "BOOKING_INTENT":
-    handle_booking_with_gpt(update, user_id, user_text, state)
-elif intent_data['intent'] == "CANCEL_INTENT":
-    handle_cancellation(update, user_id, intent_data['extracted_info'])
-elif intent_data['intent'] == "RESCHEDULE_INTENT":
-    handle_reschedule(update, user_id, intent_data['extracted_info'])
-elif intent_data['intent'] == "PRICE_QUESTION":
-    handle_price_question(update, user_id, intent_data['extracted_info'])
-elif intent_data['intent'] == "SPECIALIST_QUESTION":
-    handle_specialist_question(update, user_id, intent_data['extracted_info'])
-elif intent_data['intent'] == "SERVICE_QUESTION":
-    handle_services_question(update)
-elif intent_data['intent'] == "GENERAL_QUESTION":
-    handle_general_question(update, user_id, user_text)
-else:
-    # Если намерение не определено, передаем в обработчик бронирования
-    handle_booking_with_gpt(update, user_id, user_text, state)
+            # Обработка различных намерений
+            if intent_data['intent'] == "BOOKING_INTENT":
+                handle_booking_with_gpt(update, user_id, user_text, state)
+            elif intent_data['intent'] == "CANCEL_INTENT":
+                handle_cancellation(update, user_id, intent_data['extracted_info'])
+            elif intent_data['intent'] == "RESCHEDULE_INTENT":
+                handle_reschedule(update, user_id, intent_data['extracted_info'])
+            elif intent_data['intent'] == "PRICE_QUESTION":
+                handle_price_question(update, user_id, intent_data['extracted_info'])
+            elif intent_data['intent'] == "SPECIALIST_QUESTION":
+                handle_specialist_question(update, user_id, intent_data['extracted_info'])
+            elif intent_data['intent'] == "SERVICE_QUESTION":
+                handle_services_question(update)
+            elif intent_data['intent'] == "GENERAL_QUESTION":
+                handle_general_question(update, user_id, user_text)
+            else:
+                # Если намерение не определено, передаем в обработчик бронирования
+                handle_booking_with_gpt(update, user_id, user_text, state)
 
         except json.JSONDecodeError:
             logger.error("Ошибка парсинга JSON от GPT")
