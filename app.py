@@ -1221,24 +1221,46 @@ def show_all_specialists(update):
 
 
 def handle_services_question(update):
-    """Показать список доступных услуг с ценами"""
-    conn = get_db_connection()
-    cur = conn.cursor()
+    """Показать список доступных услуг"""
     try:
-        cur.execute("SELECT title, price FROM services ORDER BY title")
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем только существующие колонки
+        cur.execute("""
+            SELECT title 
+            FROM services 
+            WHERE is_active = true 
+            ORDER BY title
+        """)
         services = cur.fetchall()
+        
         if services:
-            services_text = "\n".join([f"💠 {service[0]} - {service[1]} руб." for service in services])
-            update.message.reply_text(
-                "Наши услуги:\n\n"
-                f"{services_text}\n\n"
-                "Чтобы записаться, просто напишите название нужной услуги."
-            )
+            # Формируем список услуг
+            services_text = "Наши услуги:\n\n"
+            for service in services:
+                services_text += f"💠 {service[0]}\n"
+            
+            services_text += "\nЧтобы записаться на услугу, просто напишите её название."
+            
+            update.message.reply_text(services_text)
         else:
-            update.message.reply_text("К сожалению, список услуг временно недоступен.")
+            update.message.reply_text(
+                "К сожалению, список услуг временно недоступен. "
+                "Пожалуйста, свяжитесь с администратором."
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка услуг: {e}", exc_info=True)
+        update.message.reply_text(
+            "Извините, произошла ошибка при получении списка услуг. "
+            "Пожалуйста, попробуйте позже."
+        )
     finally:
-        cur.close()
-        conn.close()
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 
 
