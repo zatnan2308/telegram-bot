@@ -999,7 +999,7 @@ def process_booking(update, user_id, user_text, state):
             update.message.reply_text("Запись отменена.")
             delete_user_state(user_id)
         else:
-            update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'."))
+            update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
 
 
 
