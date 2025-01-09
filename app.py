@@ -1091,6 +1091,7 @@ def handle_time_selection(update, user_id, time_text, state):
 
 def handle_booking_confirmation(update, user_id, response, state):
     """Обработка подтверждения бронирования"""
+    # Проверка наличия необходимых данных
     if not state or 'chosen_time' not in state:
         update.message.reply_text(
             "Извините, информация о бронировании была потеряна. "
@@ -1113,6 +1114,7 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
             
             if success:
+                # Сообщение клиенту
                 confirmation_message = (
                     "✨ Благодарим вас за обращение в наш салон красоты!\n\n"
                     "Ваше бронирование успешно подтверждено:\n\n"
@@ -1125,17 +1127,26 @@ def handle_booking_confirmation(update, user_id, response, state):
                 )
                 update.message.reply_text(confirmation_message)
                 
-                # Уведомление менеджеру
+                # Уведомление менеджерам
+                manager_message = (
+                    "🆕 Новая запись!\n\n"
+                    f"🎯 Услуга: {service_name}\n"
+                    f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
+                    f"⏰ Время: {date_time.strftime('%H:%M')}\n"
+                    f"👩‍💼 Мастер: {specialist_name}\n"
+                    f"👤 Клиент ID: {user_id}"
+                )
+                
+                # Отправка уведомлений всем активным менеджерам
+                notify_managers(manager_message, 'new_booking')
+                
+                # Дополнительное уведомление для основного менеджера, если задан MANAGER_CHAT_ID
                 if MANAGER_CHAT_ID:
-                    bot.send_message(
-                        MANAGER_CHAT_ID,
-                        f"🆕 Новая запись!\n\n"
-                        f"🎯 Услуга: {service_name}\n"
-                        f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
-                        f"⏰ Время: {date_time.strftime('%H:%M')}\n"
-                        f"👩‍💼 Мастер: {specialist_name}\n"
-                        f"👤 Клиент ID: {user_id}"
-                    )
+                    try:
+                        bot.send_message(MANAGER_CHAT_ID, manager_message)
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки уведомления основному менеджеру: {e}")
+                
             else:
                 update.message.reply_text(
                     "❌ Произошла ошибка при создании записи. "
@@ -1149,6 +1160,7 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
         finally:
             delete_user_state(user_id)
+            
     elif response.lower() in ['нет', 'no', 'отмена', 'ytn']:
         update.message.reply_text("Запись отменена.")
         delete_user_state(user_id)
@@ -1391,6 +1403,116 @@ def cancel_booking(user_id, booking_id):
 
 
 # ++++++=
+
+
+def register_manager(chat_id, username=None):
+    """Регистрация нового менеджера"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Проверяем, существует ли менеджер
+        cur.execute(
+            "SELECT id FROM managers WHERE chat_id = %s",
+            (chat_id,)
+        )
+        manager = cur.fetchone()
+        
+        if not manager:
+            # Создаем нового менеджера
+            cur.execute(
+                """
+                INSERT INTO managers (chat_id, username)
+                VALUES (%s, %s)
+                RETURNING id
+                """,
+                (chat_id, username)
+            )
+            manager_id = cur.fetchone()[0]
+            
+            # Создаем настройки уведомлений по умолчанию
+            cur.execute(
+                """
+                INSERT INTO notification_settings (manager_id)
+                VALUES (%s)
+                """,
+                (manager_id,)
+            )
+            conn.commit()
+            return True
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def get_active_managers():
+    """Получение списка активных менеджеров"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT m.chat_id, ns.notify_new_booking, ns.notify_cancellation, ns.notify_reschedule
+            FROM managers m
+            JOIN notification_settings ns ON ns.manager_id = m.id
+            WHERE m.is_active = true
+            """
+        )
+        return cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+def notify_managers(message, notification_type='new_booking'):
+    """Отправка уведомлений менеджерам"""
+    managers = get_active_managers()
+    
+    for manager in managers:
+        chat_id, notify_new, notify_cancel, notify_reschedule = manager
+        
+        should_notify = (
+            (notification_type == 'new_booking' and notify_new) or
+            (notification_type == 'cancellation' and notify_cancel) or
+            (notification_type == 'reschedule' and notify_reschedule)
+        )
+        
+        if should_notify:
+            try:
+                bot.send_message(chat_id, message)
+            except Exception as e:
+                logger.error(f"Ошибка отправки уведомления менеджеру {chat_id}: {e}")
+
+
+
+
+
+def handle_manager_commands(update, context):
+    """Обработка команд менеджера"""
+    command = update.message.text
+    chat_id = update.message.chat_id
+    username = update.message.from_user.username
+    
+    if command == '/register_manager':
+        if register_manager(chat_id, username):
+            update.message.reply_text(
+                "✅ Вы успешно зарегистрированы как менеджер.\n"
+                "Вам будут приходить уведомления о новых записях."
+            )
+        else:
+            update.message.reply_text("Вы уже зарегистрированы как менеджер.")
+    
+    elif command == '/stop_notifications':
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE managers SET is_active = false WHERE chat_id = %s",
+                (chat_id,)
+            )
+            conn.commit()
+            update.message.reply_text("Уведомления отключены.")
+        finally:
+            cur.close()
+            conn.close()
 
 
 # =============================================================================
