@@ -1435,13 +1435,18 @@ def cancel_booking(user_id, booking_id):
         
         # Получаем информацию о записи
         cur.execute("""
-            SELECT service_id, specialist_id, date_time 
-            FROM bookings 
-            WHERE id = %s AND user_id = %s
+            SELECT b.service_id, b.specialist_id, b.date_time,
+                   s.title as service_name, sp.name as specialist_name
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            JOIN specialists sp ON b.specialist_id = sp.id
+            WHERE b.id = %s AND b.user_id = %s
         """, (booking_id, user_id))
         booking = cur.fetchone()
         
         if booking:
+            service_id, specialist_id, date_time, service_name, specialist_name = booking
+            
             # Освобождаем слот
             cur.execute("""
                 UPDATE booking_times 
@@ -1449,17 +1454,43 @@ def cancel_booking(user_id, booking_id):
                 WHERE specialist_id = %s 
                 AND service_id = %s 
                 AND slot_time = %s
-            """, (booking[1], booking[0], booking[2]))
+            """, (specialist_id, service_id, date_time))
             
             # Удаляем запись
             cur.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
             conn.commit()
-            return True
-        return False
+
+            # Форматируем дату и время
+            formatted_date = date_time.strftime("%d.%m.%Y")
+            formatted_time = date_time.strftime("%H:%M")
+
+            # Формируем сообщение об успешной отмене
+            cancellation_message = (
+                "✅ Ваша запись успешно отменена!\n\n"
+                f"🎯 Услуга: {service_name}\n"
+                f"👩‍💼 Мастер: {specialist_name}\n"
+                f"📅 Дата: {formatted_date}\n"
+                f"⏰ Время: {formatted_time}\n\n"
+                "Чтобы записаться снова, напишите 'Записаться'."
+            )
+
+            # Уведомление менеджеров
+            manager_message = (
+                "❌ Отмена записи!\n\n"
+                f"🎯 Услуга: {service_name}\n"
+                f"👩‍💼 Мастер: {specialist_name}\n"
+                f"📅 Дата: {formatted_date}\n"
+                f"⏰ Время: {formatted_time}\n"
+                f"👤 Клиент ID: {user_id}"
+            )
+            notify_managers(manager_message, 'cancellation')
+
+            return True, cancellation_message
+        return False, "Запись не найдена."
     except psycopg2.Error as e:
         logger.error(f"Ошибка при отмене записи: {e}")
         conn.rollback()
-        return False
+        return False, "Произошла ошибка при отмене записи. Пожалуйста, попробуйте позже."
     finally:
         cur.close()
         conn.close()
