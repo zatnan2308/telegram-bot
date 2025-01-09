@@ -1226,11 +1226,10 @@ def handle_services_question(update):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Получаем только существующие колонки
+        # Получаем только название услуги
         cur.execute("""
             SELECT title 
             FROM services 
-            WHERE is_active = true 
             ORDER BY title
         """)
         services = cur.fetchall()
