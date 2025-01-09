@@ -229,16 +229,59 @@ def create_booking(user_id, serv_id, spec_id, date_str):
     conn.close()
     return True
 
-def find_service_in_text(user_text):
-    services = get_services()
-    user_text_lower = user_text.lower()
-    logger.info(f"Поиск услуги в тексте: {user_text_lower}")
-    for (s_id, s_title) in services:
-        logger.info(f"Проверка услуги: {s_title.lower()}")
-        if s_title.lower() in user_text_lower:
-            logger.info(f"Найдена услуга: {s_title}")
-            return (s_id, s_title)
-    return None
+def find_service_by_name(user_text):
+    """Поиск услуги по названию с использованием нечеткого поиска"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Сначала ищем точное совпадение
+        cur.execute("SELECT id, title FROM services WHERE LOWER(title) = LOWER(%s)", (user_text,))
+        service = cur.fetchone()
+        
+        if not service:
+            # Если точного совпадения нет, ищем частичное
+            cur.execute("""
+                SELECT id, title 
+                FROM services 
+                WHERE LOWER(title) LIKE LOWER(%s) 
+                   OR LOWER(%s) = ANY(STRING_TO_ARRAY(LOWER(title), ' '))
+            """, (f'%{user_text}%', user_text))
+            services = cur.fetchall()
+            
+            if len(services) == 1:
+                # Если нашли только одно совпадение
+                service = services[0]
+            elif len(services) > 1:
+                # Если нашли несколько совпадений, используем GPT для выбора наиболее подходящего
+                system_prompt = f"""
+                Выбери наиболее подходящую услугу из списка на основе запроса клиента.
+                Запрос клиента: {user_text}
+                Доступные услуги: {[s[1] for s in services]}
+                
+                Верни только название выбранной услуги или None, если нет подходящей.
+                """
+                
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text}
+                    ],
+                    temperature=0.3
+                )
+                
+                selected_service = response.choices[0].message.content.strip()
+                if selected_service and selected_service != "None":
+                    service = next((s for s in services if s[1].lower() == selected_service.lower()), None)
+        
+        return service
+    
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
 def parse_time_input(user_text, available_times):
     if not available_times:
@@ -547,6 +590,14 @@ def handle_message(update, context):
         if user_text.lower() in ['отмена', 'cancel', 'стоп', 'stop']:
             delete_user_state(user_id)
             update.message.reply_text("Процесс записи отменён. Можете начать заново.")
+            return
+
+        # Проверяем, является ли текст названием услуги
+        service = find_service_by_name(user_text)
+        if service:
+            # Если нашли услугу, начинаем процесс записи
+            update.message.reply_text(f"Вы выбрали услугу: {service[1]}")
+            handle_booking_with_gpt(update, user_id, service[1], state)
             return
 
         # Если пользователь находится в процессе выбора специалиста
