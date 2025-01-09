@@ -962,12 +962,15 @@ def process_booking(update, user_id, user_text, state):
             else:
                 update.message.reply_text("Не нашли такого специалиста. Попробуйте снова.")
 
-    elif step == "select_time":
-        serv_id = state['service_id']
-        spec_id = state['specialist_id']
-        av_times = get_available_times(spec_id, serv_id)
-        chosen_time = parse_time_input(user_text, av_times)
-        if chosen_time and chosen_time in av_times:
+    elif action == "SELECT_TIME":
+    if not state or not all(k in state for k in ['service_id', 'specialist_id']):
+        update.message.reply_text("Сначала выберите услугу и специалиста.")
+        return
+
+    chosen_time = extracted_data.get('time')
+    available_times = get_available_times(state['specialist_id'], state['service_id'])
+    
+    if chosen_time and chosen_time in available_times:
             set_user_state(user_id, "confirm", service_id=serv_id, specialist_id=spec_id, chosen_time=chosen_time)
             srv_name = get_service_name(serv_id)
             sp_name = get_specialist_name(spec_id)
