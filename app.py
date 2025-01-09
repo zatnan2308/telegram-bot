@@ -279,117 +279,140 @@ def find_available_specialist(service_id, exclude_id=None):
             return sp
     return None
 
+def handle_booking_with_gpt(update, user_id, user_text, state=None):
+    system_prompt = """
+    Ты — ассистент по бронированию услуг в салоне красоты. Твоя задача:
+    1. Определить намерение пользователя (запись/отмена/перенос)
+    2. Извлечь важную информацию (услуга, специалист, время)
+    3. Вести диалог последовательно и вежливо
+    4. Предоставлять четкие инструкции
+
+    Доступные действия:
+    - LIST_SERVICES: показать список услуг
+    - SELECT_SERVICE: выбрать услугу
+    - SELECT_SPECIALIST: выбрать специалиста
+    - SELECT_TIME: выбрать время
+    - CONFIRM_BOOKING: подтвердить запись
+    - CANCEL_BOOKING: отменить запись
+    - RESCHEDULE: перенести запись
+    
+    Отвечай в формате JSON:
+    {
+        "action": "действие",
+        "response": "ответ пользователю",
+        "extracted_data": {
+            "service": "название услуги",
+            "specialist": "имя специалиста",
+            "time": "время"
+        }
+    }
+    """
+
+    # Получаем контекст предыдущего состояния
+    context = ""
+    if state:
+        context = f"Текущий этап бронирования: {state['step']}\n"
+        if state.get('service_id'):
+            service_name = get_service_name(state['service_id'])
+            context += f"Выбранная услуга: {service_name}\n"
+        if state.get('specialist_id'):
+            specialist_name = get_specialist_name(state['specialist_id'])
+            context += f"Выбранный специалист: {specialist_name}\n"
+        if state.get('chosen_time'):
+            context += f"Выбранное время: {state['chosen_time']}\n"
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Контекст:\n{context}\nСообщение пользователя: {user_text}"}
+            ],
+            temperature=0.7
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        
+        # Обработка действий на основе ответа GPT
+        action = result.get('action')
+        if action == "LIST_SERVICES":
+            services = get_services()
+            service_list = "\n".join([f"- {s[1]}" for s in services])
+            update.message.reply_text(f"{result['response']}\n\nДоступные услуги:\n{service_list}")
+            
+        elif action == "SELECT_SERVICE":
+            service_name = result['extracted_data'].get('service')
+            if service_name:
+                services = get_services()
+                service = next((s for s in services if s[1].lower() == service_name.lower()), None)
+                if service:
+                    set_user_state(user_id, "select_specialist", service_id=service[0])
+                    specialists = get_specialists(service_id=service[0])
+                    sp_text = "\n".join([f"- {sp[1]}" for sp in specialists])
+                    update.message.reply_text(f"{result['response']}\n\nДоступные специалисты:\n{sp_text}")
+                else:
+                    update.message.reply_text("Извините, такой услуги нет в списке. Попробуйте еще раз.")
+            else:
+                update.message.reply_text(result['response'])
+
+        elif action == "SELECT_SPECIALIST":
+            if state and state.get('service_id'):
+                specialist_name = result['extracted_data'].get('specialist')
+                specialists = get_specialists(state['service_id'])
+                specialist = next((s for s in specialists if s[1].lower() == specialist_name.lower()), None)
+                
+                if specialist:
+                    available_times = get_available_times(specialist[0], state['service_id'])
+                    if available_times:
+                        set_user_state(user_id, "select_time", 
+                                     service_id=state['service_id'],
+                                     specialist_id=specialist[0])
+                        times_text = "\n".join([f"- {t}" for t in available_times])
+                        update.message.reply_text(f"{result['response']}\n\nДоступное время:\n{times_text}")
+                    else:
+                        update.message.reply_text("К сожалению, у этого специалиста нет свободного времени.")
+                else:
+                    update.message.reply_text("Специалист не найден. Попробуйте еще раз.")
+
+        elif action == "CONFIRM_BOOKING":
+            if state and all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
+                success = create_booking(
+                    user_id=user_id,
+                    serv_id=state['service_id'],
+                    spec_id=state['specialist_id'],
+                    date_str=state['chosen_time']
+                )
+                if success:
+                    update.message.reply_text(result['response'])
+                    delete_user_state(user_id)
+                else:
+                    update.message.reply_text("Произошла ошибка при создании записи. Попробуйте позже.")
+            else:
+                update.message.reply_text("Недостаточно информации для создания записи.")
+
+        elif action == "CANCEL_BOOKING":
+            # Добавить логику отмены записи
+            delete_user_state(user_id)
+            update.message.reply_text(result['response'])
+
+        else:
+            update.message.reply_text(result['response'])
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке GPT: {e}")
+        update.message.reply_text("Произошла ошибка. Пожалуйста, попробуйте позже.")
+
+# Обновляем основной обработчик сообщений
 def handle_message(update, context):
-    user_text = update.message.text.strip().lower()
+    user_text = update.message.text.strip()
     user_id = update.message.chat_id
     user_name = update.message.chat.first_name or "Unknown"
 
-    if user_text in ["какие есть услуги?", "какие услуги?", "список услуг"]:
-        services = get_services()
-        if services:
-            txt = "\n".join([f"{s[0]}. {s[1]}" for s in services])
-            update.message.reply_text(f"Доступные услуги:\n{txt}")
-        else:
-            update.message.reply_text("На данный момент нет услуг.")
-        return
-
-    # Обработка запроса "хочу записаться на ..."
-    if "хочу записаться" in user_text:
-        found = find_service_in_text(user_text)
-        if not found:
-            sys_prompt = "Выдели название услуги из следующей фразы."
-            try:
-                resp = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": sys_prompt},
-                        {"role": "user", "content": user_text}
-                    ],
-                    max_tokens=20,
-                    temperature=0.3
-                )
-                service_extracted = resp['choices'][0]['message']['content'].strip().lower()
-                services_list = get_services()
-                for s_id, s_title in services_list:
-                    if s_title.lower() in service_extracted:
-                        found = (s_id, s_title)
-                        break
-            except Exception as e:
-                logger.error(f"Ошибка извлечения услуги через GPT: {e}")
-        if found:
-            user_text = f"хочу {found[1].lower()}"
-        # Если не найдено, продолжаем дальше
-
     register_user(user_id, user_name)
-
-    st = get_user_state(user_id)
-    if st:
-        process_booking(update, user_id, user_text, st)
-        return
-
-    intent_data = determine_intent(user_text)
-    intent = intent_data.get("intent", "UNKNOWN")
-    entities = intent_data.get("entities", {})
-
-    if intent == "LIST_SERVICES":
-        services = get_services()
-        unique_services = sorted({s[1] for s in services})
-        if unique_services:
-            service_list = "\n".join([f"- {s}" for s in unique_services])
-            update.message.reply_text(f"Доступные услуги:\n{service_list}")
-        else:
-            update.message.reply_text("На данный момент нет услуг.")
-    elif intent == "LIST_SPECIALIST_SERVICES":
-        specialist_name = entities.get("specialist_name", "").strip()
-        if not specialist_name:
-            update.message.reply_text("Не удалось определить специалиста. Пожалуйста, уточните запрос.")
-            return
-        specialists = get_specialists()
-        matched_specialist = next((sp for sp in specialists if sp[1].lower() == specialist_name.lower()), None)
-        if not matched_specialist:
-            update.message.reply_text(f"Специалист '{specialist_name}' не найден.")
-            return
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT s.title
-            FROM services s
-            JOIN specialist_services ss ON s.id = ss.service_id
-            WHERE ss.specialist_id = %s
-        """, (matched_specialist[0],))
-        services = cur.fetchall()
-        cur.close()
-        conn.close()
-        if services:
-            service_list = "\n".join([f"- {s[0]}" for s in services])
-            update.message.reply_text(f"Услуги специалиста {matched_specialist[1]}:\n{service_list}")
-        else:
-            update.message.reply_text(f"Специалист {matched_specialist[1]} не предлагает никаких услуг.")
-    elif intent == "BOOK_SERVICE":
-        service_title = entities.get("service_title", "").strip()
-        if not service_title:
-            update.message.reply_text("Не удалось определить услугу. Пожалуйста, уточните запрос.")
-            return
-        services = get_services()
-        matched_service = next((s for s in services if s[1].lower() == service_title.lower()), None)
-        if not matched_service:
-            update.message.reply_text(f"Услуга '{service_title}' не найдена.")
-            return
-        specialists = get_specialists(service_id=matched_service[0])
-        if not specialists:
-            update.message.reply_text("Нет специалистов, предлагающих эту услугу.")
-            return
-        set_user_state(user_id, "select_specialist", service_id=matched_service[0])
-        sp_text = "\n".join([f"{sp[0]}. {sp[1]}" for sp in specialists])
-        update.message.reply_text(
-            f"Вы выбрали услугу: {matched_service[1]}\n"
-            f"Пожалуйста, выберите специалиста:\n{sp_text}"
-        )
-    elif intent == "UNKNOWN":
-        bot_resp = generate_ai_response(user_text)
-        update.message.reply_text(bot_resp)
-    else:
-        update.message.reply_text("Извините, я не понял ваш запрос. Пожалуйста, попробуйте снова.")
+    state = get_user_state(user_id)
+    
+    # Передаем обработку GPT
+    handle_booking_with_gpt(update, user_id, user_text, state)
 
 # =============================================================================
 # Функция пошаговой логики бронирования
