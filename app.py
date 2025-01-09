@@ -772,18 +772,81 @@ def handle_message(update, context):
 
         logger.info(f"Получено сообщение от user_id={user_id}, name={user_name}: {user_text}")
 
-        # Регистрируем пользователя
+        # Регистрируем (или обновляем) пользователя в базе
         register_user(user_id, user_name)
 
-        # Получаем state
+        # Получаем текущее состояние пользователя
         state = get_user_state(user_id)
         logger.info(f"Текущее состояние: {state}")
 
-        # determine_intent
+        # -----------------------------------------------------------
+        # 1. Если пользователь уже на шаге "confirm", обходим GPT
+        #    и обрабатываем "да"/"нет" напрямую.
+        # -----------------------------------------------------------
+        if state and state.get('step') == 'confirm':
+            # Список форм подтверждения (можно расширять)
+            confirmation_text = user_text.strip().lower().strip('.,!?')
+            positive_answers = ['да', 'yes', 'подтверждаю', 'ок', 'конечно', 'да.', 'yes.', 'подтверждаю.', 'да!', 'yes!']
+            negative_answers = ['нет', 'no', 'отмена', 'cancel', 'stop', 'нет.', 'no.', 'нет!', 'no!']
+
+            if confirmation_text in positive_answers:
+                # Создаём бронирование
+                ok = create_booking(
+                    user_id=user_id,
+                    serv_id=state['service_id'],
+                    spec_id=state['specialist_id'],
+                    date_str=state['chosen_time']
+                )
+                if ok:
+                    # Если всё окей, сообщаем пользователю
+                    sname = get_service_name(state['service_id'])
+                    spname = get_specialist_name(state['specialist_id'])
+                    try:
+                        dt = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
+                        dt_str = dt.strftime("%d.%m.%Y %H:%M")
+                    except ValueError:
+                        dt_str = state['chosen_time']
+                    update.message.reply_text(
+                        f"✅ Запись подтверждена!\n"
+                        f"Услуга: {sname}\n"
+                        f"Специалист: {spname}\n"
+                        f"Время: {dt_str}"
+                    )
+
+                    # Уведомляем менеджера (если нужно)
+                    if MANAGER_CHAT_ID:
+                        manager_msg = (
+                            f"🆕 Новая запись!\n\n"
+                            f"🎯 Услуга: {sname}\n"
+                            f"👩‍💼 Мастер: {spname}\n"
+                            f"📅 Время: {dt_str}\n"
+                            f"👤 Клиент ID: {user_id}"
+                        )
+                        bot.send_message(MANAGER_CHAT_ID, manager_msg)
+                else:
+                    update.message.reply_text("❌ Ошибка при создании записи.")
+                
+                # После confirm (любой) чистим state
+                delete_user_state(user_id)
+                return  # ВАЖНО: прерываем handle_message
+
+            elif confirmation_text in negative_answers:
+                update.message.reply_text("Запись отменена.")
+                delete_user_state(user_id)
+                return  # ВАЖНО: тоже прерываем handle_message
+
+            else:
+                update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+                return
+
+        # -----------------------------------------------------------
+        # 2. Если пользователь НЕ на шаге confirm, идём по обычной схеме:
+        #    Сначала определяем intent через GPT
+        # -----------------------------------------------------------
         intent = determine_intent(user_text)
         logger.info(f"Intent: {intent}")
 
-        # Если явное желание "записать"...
+        # 2.1 Явное желание «записаться»
         if "запис" in user_text.lower() or intent['intent'] == 'BOOKING_INTENT':
             existing = get_user_bookings(user_id)
             if existing:
@@ -794,16 +857,17 @@ def handle_message(update, context):
                     )
                     set_user_state(user_id, "confirm_additional_booking", service_id=service[0])
                     return
+            # Если записей нет или пользователь согласился на дополнительную запись
             handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
-        # Базовые команды: отмена
+        # 2.2 Базовые команды «отмена»
         if user_text.lower() in ['отмена','cancel','стоп','stop']:
             delete_user_state(user_id)
             update.message.reply_text("Процесс записи отменён.")
             return
 
-        # Отмена записи
+        # 2.3 Отмена записи (если user_text содержит «отмен»)
         if "отмен" in user_text.lower():
             bookings = get_user_bookings(user_id)
             if bookings:
@@ -817,19 +881,19 @@ def handle_message(update, context):
             delete_user_state(user_id)
             return
 
-        # Проверка - является ли текст названием услуги
+        # 2.4 Проверка, является ли текст названием услуги
         svc = find_service_by_name(user_text)
         if svc:
             update.message.reply_text(f"Вы выбрали услугу: {svc[1]}")
             handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
-        # Если пользователь находится на select_specialist
+        # 2.5 Если пользователь на шаге «select_specialist», передадим в handle_booking_with_gpt
         if state and state['step'] == 'select_specialist':
             handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
-        # Переходим к более универсальному анализу
+        # 2.6 Во всех остальных случаях — более универсальный анализ (через другой system_prompt)
         system_prompt = """
         Ты — ассистент салона красоты. Определи намерение пользователя:
         1. GENERAL_QUESTION - общий вопрос
@@ -887,11 +951,13 @@ def handle_message(update, context):
 
         except json.JSONDecodeError:
             logger.error("Ошибка парсинга JSON от GPT (второй слой).")
+            # Если GPT не смог вернуть JSON, переходим в handle_booking_with_gpt
             handle_booking_with_gpt(update, user_id, user_text, state)
 
     except Exception as e:
         logger.error(f"Ошибка handle_message: {e}", exc_info=True)
-        update.message.reply_text("Произошла ошибка. Попробуйте позже или напишите /start")
+        update.message.reply_text("Произошла ошибка. Пожалуйста, попробуйте позже или напишите /start")
+
 
 ###############################################################################
 #            Функции для обработки различных намерений
