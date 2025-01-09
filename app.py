@@ -421,15 +421,20 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     specialists = get_specialists(service_id=service_id)
                     if specialists:
                         set_user_state(user_id, "select_specialist", service_id=service_id)
-                        specialists_list = "\n".join([f"- {sp[1]}" for sp in specialists])
+                        specialists_info = []
+                    for spec in specialists:
+                        available_times = get_available_times(spec[0], service_id)
+                        if available_times:
+                            specialists_info.append(f"👩‍💼 {spec[1]}\n   Доступное время:\n   " + 
+                                                 "\n   ".join([f"🕐 {t}" for t in available_times]))
+                    
+                    if specialists_info:
                         update.message.reply_text(
-                            f"{gpt_response_text}\n\n"
-                            f"Доступные специалисты:\n{specialists_list}"
+                            f"Для услуги '{service_name}' доступны следующие специалисты:\n\n" +
+                            "\n\n".join(specialists_info)
                         )
                     else:
-                        update.message.reply_text(
-                            "К сожалению, сейчас нет доступных специалистов для этой услуги."
-                        )
+                        update.message.reply_text("К сожалению, нет доступного времени у специалистов.")
                 else:
                     services = get_services()
                     service_list = "\n".join([f"- {s[1]}" for s in services])
@@ -1116,21 +1121,37 @@ def handle_time_selection(update, user_id, time_text, state):
 
 def handle_booking_confirmation(update, user_id, response, state):
     """Обработка подтверждения бронирования"""
-    # Проверка наличия необходимых данных
     if not state or 'chosen_time' not in state:
         update.message.reply_text(
-            "Извините, информация о бронировании была потеряна. "
+            "❌ Извините, информация о бронировании была потеряна. "
             "Пожалуйста, начните процесс записи заново."
         )
         delete_user_state(user_id)
         return
 
-    if response.lower() in ['да', 'yes', 'подтверждаю', 'lf']:
+    if response.lower() in ['да', 'yes', 'подтверждаю', 'lf', 'конечно', '+']:
         try:
+            # Получаем информацию об услуге и специалисте
             service_name = get_service_name(state['service_id'])
             specialist_name = get_specialist_name(state['specialist_id'])
-            date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
             
+            # Проверяем, не занято ли уже выбранное время
+            available_times = get_available_times(state['specialist_id'], state['service_id'])
+            if state['chosen_time'] not in available_times:
+                update.message.reply_text(
+                    "❌ К сожалению, выбранное время уже занято. "
+                    "Пожалуйста, выберите другое время."
+                )
+                # Возвращаем пользователя к выбору времени
+                set_user_state(
+                    user_id, 
+                    "select_time",
+                    service_id=state['service_id'],
+                    specialist_id=state['specialist_id']
+                )
+                return
+
+            # Создаем бронирование
             success = create_booking(
                 user_id=user_id,
                 serv_id=state['service_id'],
@@ -1139,33 +1160,42 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
             
             if success:
-                # Сообщение клиенту
+                # Форматируем дату и время для отображения
+                try:
+                    date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
+                    formatted_date = date_time.strftime("%d.%m.%Y")
+                    formatted_time = date_time.strftime("%H:%M")
+                except ValueError:
+                    formatted_date = state['chosen_time'].split()[0]
+                    formatted_time = state['chosen_time'].split()[1]
+
+                # Сообщение для клиента
                 confirmation_message = (
-                    "✨ Благодарим вас за обращение в наш салон красоты!\n\n"
-                    "Ваше бронирование успешно подтверждено:\n\n"
+                    "✅ Ваша запись успешно подтверждена!\n\n"
                     f"🎯 Услуга: {service_name}\n"
-                    f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
-                    f"⏰ Время: {date_time.strftime('%H:%M')}\n"
-                    f"👩‍💼 Мастер: {specialist_name}\n\n"
-                    "Если возникнут вопросы или необходимость внести изменения, "
-                    "пожалуйста, свяжитесь с нами."
+                    f"👩‍💼 Мастер: {specialist_name}\n"
+                    f"📅 Дата: {formatted_date}\n"
+                    f"⏰ Время: {formatted_time}\n\n"
+                    "ℹ️ Если вам потребуется изменить или отменить запись, "
+                    "просто напишите об этом в чат.\n\n"
+                    "👋 Будем рады видеть вас!"
                 )
                 update.message.reply_text(confirmation_message)
                 
-                # Уведомление менеджерам
+                # Уведомление для менеджеров
                 manager_message = (
                     "🆕 Новая запись!\n\n"
                     f"🎯 Услуга: {service_name}\n"
-                    f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
-                    f"⏰ Время: {date_time.strftime('%H:%M')}\n"
                     f"👩‍💼 Мастер: {specialist_name}\n"
+                    f"📅 Дата: {formatted_date}\n"
+                    f"⏰ Время: {formatted_time}\n"
                     f"👤 Клиент ID: {user_id}"
                 )
                 
-                # Отправка уведомлений всем активным менеджерам
+                # Отправляем уведомления менеджерам
                 notify_managers(manager_message, 'new_booking')
                 
-                # Дополнительное уведомление для основного менеджера, если задан MANAGER_CHAT_ID
+                # Дополнительное уведомление основному менеджеру
                 if MANAGER_CHAT_ID:
                     try:
                         bot.send_message(MANAGER_CHAT_ID, manager_message)
@@ -1174,24 +1204,32 @@ def handle_booking_confirmation(update, user_id, response, state):
                 
             else:
                 update.message.reply_text(
-                    "❌ Произошла ошибка при создании записи. "
-                    "Пожалуйста, попробуйте позже."
+                    "❌ Произошла ошибка при создании записи.\n"
+                    "Пожалуйста, попробуйте позже или свяжитесь с администратором."
                 )
+                
         except Exception as e:
-            logger.error(f"Ошибка при создании записи: {e}", exc_info=True)
+            logger.error(f"Ошибка при подтверждении записи: {e}", exc_info=True)
             update.message.reply_text(
-                "❌ Произошла ошибка при создании записи. "
-                "Пожалуйста, попробуйте позже."
+                "❌ Произошла ошибка при создании записи.\n"
+                "Пожалуйста, попробуйте позже или свяжитесь с администратором."
             )
+            
         finally:
             delete_user_state(user_id)
             
-    elif response.lower() in ['нет', 'no', 'отмена', 'ytn']:
-        update.message.reply_text("Запись отменена.")
+    elif response.lower() in ['нет', 'no', 'отмена', 'ytn', 'отменить', '-']:
+        update.message.reply_text(
+            "❌ Запись отменена.\n"
+            "Если хотите записаться на другое время, напишите 'Записаться'."
+        )
         delete_user_state(user_id)
+        
     else:
-        update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
-
+        update.message.reply_text(
+            "Пожалуйста, ответьте 'да' для подтверждения "
+            "или 'нет' для отмены записи."
+        )
 
 
 
