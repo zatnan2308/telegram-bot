@@ -683,14 +683,17 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             if not state or not all(k in state for k in ['service_id','specialist_id','chosen_time']):
                 update.message.reply_text("Недостаточно информации для записи.")
                 return
-
-            # Приводим к нижнему регистру и «чистим» пробелы/точки
+        
             confirmation_text = user_text.strip().lower().strip('.,!')
-    
-            if user_text.lower() in ['да','yes','подтверждаю', 'ок', 'конечно']:
+        
+            # Список форм подтверждения
+            positive_answers = ['да', 'yes', 'подтверждаю', 'ок', 'конечно', 'да.', 'yes.', 'подтверждаю.']
+            negative_answers = ['нет', 'no', 'отмена', 'cancel', 'stop', 'нет.', 'no.']
+        
+            if confirmation_text in positive_answers:
                 ok = create_booking(
-                    user_id, 
-                    state['service_id'], 
+                    user_id,
+                    state['service_id'],
                     state['specialist_id'],
                     state['chosen_time']
                 )
@@ -700,12 +703,15 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     try:
                         dtm = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
                         dt_str = dtm.strftime("%d.%m.%Y %H:%M")
-                    except:
+                    except ValueError:
                         dt_str = state['chosen_time']
                     update.message.reply_text(
-                        f"✅ Запись подтверждена!\nУслуга: {sname}\nСпециалист: {spname}\nВремя: {dt_str}"
+                        f"✅ Запись подтверждена!\n"
+                        f"Услуга: {sname}\n"
+                        f"Специалист: {spname}\n"
+                        f"Время: {dt_str}"
                     )
-                    # Уведомление менеджеру
+        
                     if MANAGER_CHAT_ID:
                         manager_msg = (
                             f"🆕 Новая запись!\n\n"
@@ -717,10 +723,18 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                         bot.send_message(MANAGER_CHAT_ID, manager_msg)
                 else:
                     update.message.reply_text("❌ Ошибка при создании записи.")
+        
                 delete_user_state(user_id)
-            else:
+        
+            elif confirmation_text in negative_answers:
                 update.message.reply_text("Запись отменена.")
                 delete_user_state(user_id)
+            else:
+                # Непонятный ответ — просим уточнить
+                update.message.reply_text(
+                    "Пожалуйста, ответьте 'да' или 'нет' для подтверждения или отмены записи."
+                )
+
 
         elif action == "CANCEL_BOOKING":
             delete_user_state(user_id)
