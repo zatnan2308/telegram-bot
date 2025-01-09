@@ -928,7 +928,136 @@ def process_booking(update, user_id, user_text, state):
 
 
 
+def handle_specialist_selection(update, user_id, specialist_name, state):
+    specialists = get_specialists(state['service_id'])
+    # Ищем специалиста по частичному совпадению имени или фамилии
+    specialist = next(
+        (sp for sp in specialists 
+         if any(part.lower() in sp[1].lower() for part in specialist_name.split())),
+        None
+    )
+    
+    if specialist:
+        av_times = get_available_times(specialist[0], state['service_id'])
+        if av_times:
+            if len(av_times) == 1:
+                # Если доступно только одно время
+                set_user_state(
+                    user_id, 
+                    "confirm",
+                    service_id=state['service_id'],
+                    specialist_id=specialist[0],
+                    chosen_time=av_times[0]
+                )
+                service_name = get_service_name(state['service_id'])
+                update.message.reply_text(
+                    f"Специалист {specialist[1]} доступен только в следующее время:\n"
+                    f"🗓 {av_times[0]}\n\n"
+                    "Хотите записаться на это время? (да/нет)"
+                )
+            else:
+                set_user_state(
+                    user_id, 
+                    "select_time",
+                    service_id=state['service_id'],
+                    specialist_id=specialist[0]
+                )
+                times_text = "\n".join([f"🕐 {t}" for t in av_times])
+                update.message.reply_text(
+                    f"Выберите удобное время для записи к {specialist[1]}:\n\n{times_text}\n\n"
+                    "Достаточно указать только время (например, '12:00')"
+                )
+        else:
+            update.message.reply_text(
+                f"К сожалению, у специалиста {specialist[1]} нет свободного времени."
+            )
+    else:
+        specialists_text = "\n".join([f"👩‍💼 {s[1]}" for s in specialists])
+        update.message.reply_text(
+            "Пожалуйста, выберите специалиста из списка:\n\n"
+            f"{specialists_text}"
+        )
 
+def handle_time_selection(update, user_id, time_text, state):
+    available_times = get_available_times(state['specialist_id'], state['service_id'])
+    
+    # Если указано только время
+    if ':' in time_text and len(time_text) <= 5:
+        chosen_time = next(
+            (t for t in available_times if t.endswith(time_text)),
+            None
+        )
+    else:
+        chosen_time = next(
+            (t for t in available_times if t == time_text),
+            None
+        )
+
+    if chosen_time:
+        set_user_state(
+            user_id,
+            "confirm",
+            service_id=state['service_id'],
+            specialist_id=state['specialist_id'],
+            chosen_time=chosen_time
+        )
+        service_name = get_service_name(state['service_id'])
+        specialist_name = get_specialist_name(state['specialist_id'])
+        update.message.reply_text(
+            "Подтвердите запись:\n\n"
+            f"🎯 Услуга: {service_name}\n"
+            f"👩‍💼 Специалист: {specialist_name}\n"
+            f"🗓 Время: {chosen_time}\n\n"
+            "Для подтверждения напишите 'да' или 'нет' для отмены."
+        )
+    else:
+        times_text = "\n".join([f"🕐 {t}" for t in available_times])
+        update.message.reply_text(
+            "Выбранное время недоступно. Пожалуйста, выберите из списка:\n\n"
+            f"{times_text}"
+        )
+
+def handle_booking_confirmation(update, user_id, response, state):
+    if response.lower() in ['да', 'yes', 'подтверждаю']:
+        success = create_booking(
+            user_id=user_id,
+            serv_id=state['service_id'],
+            spec_id=state['specialist_id'],
+            date_str=state['chosen_time']
+        )
+        if success:
+            service_name = get_service_name(state['service_id'])
+            specialist_name = get_specialist_name(state['specialist_id'])
+            date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
+            
+            update.message.reply_text(
+                "✨ Благодарим вас за обращение в наш салон красоты!\n\n"
+                "Ваше бронирование успешно подтверждено:\n\n"
+                f"🎯 Услуга: {service_name}\n"
+                f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
+                f"⏰ Время: {date_time.strftime('%H:%M')}\n"
+                f"👩‍💼 Мастер: {specialist_name}\n\n"
+                "Если возникнут вопросы или необходимость внести изменения, "
+                "пожалуйста, свяжитесь с нами."
+            )
+            
+            # Уведомление менеджеру
+            if MANAGER_CHAT_ID:
+                bot.send_message(
+                    MANAGER_CHAT_ID,
+                    "🆕 Новая запись!\n\n"
+                    f"🎯 Услуга: {service_name}\n"
+                    f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
+                    f"⏰ Время: {date_time.strftime('%H:%M')}\n"
+                    f"👩‍💼 Мастер: {specialist_name}\n"
+                    f"👤 Клиент ID: {user_id}"
+                )
+        else:
+            update.message.reply_text(
+                "❌ Произошла ошибка при создании записи. "
+                "Пожалуйста, попробуйте позже."
+            )
+        delete_user_state(user_id)
 
 
 
