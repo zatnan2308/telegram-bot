@@ -209,6 +209,10 @@ def get_services():
     conn.close()
     return rows
 
+###############################################################################
+#                          ВАЖНАЯ ПРАВКА №1
+#  Добавили функцию find_service_by_name, чтобы не было NameError
+###############################################################################
 def find_service_by_name(user_text):
     """
     Пытается найти услугу в таблице services по названию (user_text).
@@ -241,7 +245,6 @@ def find_service_by_name(user_text):
     finally:
         cur.close()
         conn.close()
-
 
 def get_specialists(service_id=None):
     """
@@ -316,6 +319,10 @@ def clean_gpt_booking_response(raw_text):
     cleaned = re.sub(r"```(\w+)?", "", cleaned).strip()
     return cleaned
 
+###############################################################################
+#                          ВАЖНАЯ ПРАВКА №2
+#   Усиливаем prompt в determine_intent, просим вернуть валидный JSON с двойными кавычками
+###############################################################################
 def determine_intent(user_message):
     """
     Определяет намерение пользователя (BOOKING_INTENT, SELECT_SPECIALIST, UNKNOWN).
@@ -326,9 +333,10 @@ def determine_intent(user_message):
         "Если пользователь пытается выбрать специалиста во время процесса записи, "
         "всегда возвращай intent: 'SELECT_SPECIALIST'. "
         "Возможные намерения: SELECT_SPECIALIST, SPECIALIST_QUESTION, BOOKING_INTENT, UNKNOWN. "
-        "Верни ответ строго в формате JSON: "
-        "{'intent': 'тип намерения', 'confidence': число от 0 до 1, "
-        "'extracted_info': {'specialist': 'имя специалиста если есть'}}"
+
+        "ВАЖНО: Верни ответ STRICTLY в формате JSON, используя ДВОЙНЫЕ кавычки, например:\n"
+        "{\"intent\": \"UNKNOWN\", \"confidence\": 1.0, \"extracted_info\": {\"specialist\": \"Анна\"}}\n"
+        "Никаких одинарных кавычек, только валидный JSON."
     )
     try:
         resp = openai.ChatCompletion.create(
@@ -969,6 +977,96 @@ def handle_general_question(update, user_id, question):
 ###############################################################################
 #                  cancel_booking, notify_managers и т.п.
 ###############################################################################
+
+def get_available_times(spec_id, serv_id):
+    """
+    Возвращает список свободных временных слотов (в формате YYYY-MM-DD HH:MM) 
+    из таблицы booking_times, где specialist_id = spec_id, service_id = serv_id, 
+    is_booked = FALSE.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+    SELECT slot_time
+    FROM booking_times
+    WHERE specialist_id = %s
+      AND service_id = %s
+      AND is_booked = FALSE
+    ORDER BY slot_time
+    """, (spec_id, serv_id))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [r[0].strftime("%Y-%m-%d %H:%M") for r in rows]
+
+def create_booking(user_id, serv_id, spec_id, date_str):
+    """
+    Помечает слот как забронированный (UPDATE booking_times),
+    затем вставляет запись в bookings.
+    Возвращает True/False по результату.
+    """
+    try:
+        chosen_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+    except ValueError:
+        logger.error(f"Неверный формат даты: {date_str}")
+        return False
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE booking_times
+            SET is_booked = TRUE
+            WHERE specialist_id = %s 
+              AND service_id = %s 
+              AND slot_time = %s
+        """, (spec_id, serv_id, chosen_dt))
+        cur.execute("""
+            INSERT INTO bookings (user_id, service_id, specialist_id, date_time)
+            VALUES (%s, %s, %s, %s)
+        """, (user_id, serv_id, spec_id, chosen_dt))
+        conn.commit()
+        return True
+    except psycopg2.Error as e:
+        logger.error(f"Ошибка при создании бронирования: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def get_user_bookings(user_id):
+    """
+    Получение всех активных (будущих) записей пользователя
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT b.id, b.service_id, b.specialist_id, b.date_time,
+                   s.title as service_name, sp.name as specialist_name
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            JOIN specialists sp ON b.specialist_id = sp.id
+            WHERE b.user_id = %s
+              AND b.date_time > NOW()
+            ORDER BY b.date_time
+        """, (user_id,))
+        rows = cur.fetchall()
+        result = []
+        for r in rows:
+            result.append({
+                'id': r[0],
+                'service_id': r[1],
+                'specialist_id': r[2],
+                'date_time': r[3].strftime("%Y-%m-%d %H:%M"),
+                'service_name': r[4],
+                'specialist_name': r[5]
+            })
+        return result
+    finally:
+        cur.close()
+        conn.close()
+
 def cancel_booking(user_id, booking_id):
     """
     Реальное удаление записи (b.id=booking_id) и освобождение слот_time
