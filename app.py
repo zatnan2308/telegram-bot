@@ -578,6 +578,101 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
 
 
 
+
+
+
+def find_service_in_text(service_name):
+    """Поиск услуги по названию с использованием нечеткого поиска"""
+    if not service_name:
+        return None
+        
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Сначала ищем точное совпадение
+        cur.execute("""
+            SELECT id, title 
+            FROM services 
+            WHERE LOWER(title) = LOWER(%s)
+        """, (service_name,))
+        service = cur.fetchone()
+        
+        if not service:
+            # Если точного совпадения нет, ищем частичное
+            cur.execute("""
+                SELECT id, title 
+                FROM services 
+                WHERE LOWER(title) LIKE LOWER(%s) 
+                   OR LOWER(%s) = ANY(STRING_TO_ARRAY(LOWER(title), ' '))
+            """, (f'%{service_name}%', service_name))
+            services = cur.fetchall()
+            
+            if len(services) == 1:
+                service = services[0]
+            elif len(services) > 1:
+                # Если нашли несколько совпадений, возвращаем None
+                # В этом случае бот должен попросить уточнить услугу
+                return None
+        
+        return service
+        
+    except Exception as e:
+        logger.error(f"Ошибка при поиске услуги: {e}")
+        return None
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+def handle_booking_with_gpt(update, user_id, user_text, state):
+    """Обработка процесса бронирования с помощью GPT"""
+    try:
+        # Получаем ответ от GPT
+        gpt_response = get_gpt_response(user_id, user_text, state)
+        logger.info(f"GPT response for user {user_id}: {gpt_response}")
+        
+        action = gpt_response.get('action')
+        response_text = gpt_response.get('response')
+        extracted_data = gpt_response.get('extracted_data', {})
+        
+        if action == "SELECT_SERVICE":
+            service_name = extracted_data.get('service')
+            service = find_service_in_text(service_name)
+            
+            if service:
+                # Если услуга найдена, обновляем состояние и переходим к выбору специалиста
+                set_user_state(
+                    user_id, 
+                    'select_specialist',
+                    service_id=service[0]
+                )
+                # Показываем список специалистов для выбранной услуги
+                show_specialists_for_service(update, service[0])
+            else:
+                # Если услуга не найдена или требует уточнения
+                update.message.reply_text(response_text)
+                
+        # ... остальной код обработки действий ...
+        
+    except Exception as e:
+        logger.error(f"Ошибка при обработке GPT для user {user_id}: {e}", exc_info=True)
+        update.message.reply_text(
+            "Извините, произошла ошибка при обработке вашего запроса. "
+            "Пожалуйста, попробуйте еще раз или начните сначала с команды /start"
+        )
+
+
+
+
+
+
+
+
+
+
+
 # Обновляем основной обработчик сообщений
 def handle_message(update, context):
     try:
