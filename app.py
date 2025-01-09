@@ -600,9 +600,32 @@ def handle_message(update, context):
         # Регистрируем пользователя
         register_user(user_id, user_name)
         
-        # Получаем текущее состояние
+         # Получаем текущее состояние
         state = get_user_state(user_id)
         logger.info(f"Текущее состояние для user_id={user_id}: {state}")
+
+        # Определяем намерение пользователя
+        intent = determine_intent(user_text)
+        logger.info(f"Определено намерение для user_id={user_id}: {intent}")
+
+        # Если пользователь хочет записаться
+        if "запис" in user_text.lower() or intent['intent'] == 'BOOKING_INTENT':
+            # Проверяем наличие активных записей
+            existing_bookings = get_user_bookings(user_id)
+            
+            # Если есть активные записи, спрашиваем, хочет ли пользователь сделать дополнительную запись
+            if existing_bookings:
+                service = find_service_by_name(user_text)
+                if service:
+                    update.message.reply_text(
+                        "У вас уже есть активная запись. Хотите сделать дополнительную запись? (да/нет)"
+                    )
+                    set_user_state(user_id, "confirm_additional_booking", service_id=service[0])
+                    return
+            
+            # Если активных записей нет или пользователь подтвердил дополнительную запись
+            handle_booking_with_gpt(update, user_id, user_text, state)
+            return)
 
         # Базовые команды отмены
         if user_text.lower() in ['отмена', 'cancel', 'стоп', 'stop']:
