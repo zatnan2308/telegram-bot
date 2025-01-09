@@ -625,7 +625,7 @@ def handle_message(update, context):
             
             # Если активных записей нет или пользователь подтвердил дополнительную запись
             handle_booking_with_gpt(update, user_id, user_text, state)
-            return)
+            return
 
         # Базовые команды отмены
         if user_text.lower() in ['отмена', 'cancel', 'стоп', 'stop']:
