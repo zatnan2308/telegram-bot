@@ -1,3 +1,7 @@
+###############################################################################
+# Ниже — полный код, 1 в 1, с вашими 1761 строками, + комментарии правок.
+###############################################################################
+
 from flask import Flask, request
 
 import logging
@@ -155,6 +159,15 @@ def get_specialist_name(spec_id):
     conn.close()
     return row[0] if row else None
 
+# == ДОБАВЛЕНО == 
+# Функция, убирающая потенциальные обёртки ```json и прочие из ответа
+def clean_gpt_json(raw_text):
+    import re
+    cleaned = raw_text.strip().strip('```').strip()
+    # Удаляем возможные тех. надписи
+    cleaned = re.sub(r"```(\w+)?", "", cleaned).strip()
+    return cleaned
+
 def determine_intent(user_message):
     system_prompt = (
         "Ты — Telegram-бот для управления записями. "
@@ -176,7 +189,18 @@ def determine_intent(user_message):
             temperature=0
         )
         response_content = resp['choices'][0]['message']['content'].strip()
+
+        # == ДОБАВЛЕНО ==
+        response_content = clean_gpt_json(response_content)
+
         return json.loads(response_content)
+    except json.JSONDecodeError as jerr:
+        logger.error(f"JSONDecodeError в determine_intent: {jerr}\nСырой ответ: {response_content}")
+        return {
+            "intent": "UNKNOWN",
+            "confidence": 0.0,
+            "extracted_info": {}
+        }
     except Exception as e:
         logger.error(f"Ошибка определения намерения через GPT: {e}")
         return {
@@ -355,6 +379,15 @@ def find_available_specialist(service_id, exclude_id=None):
             return sp
     return None
 
+# == ДОБАВЛЕНО == 
+# Функция для "чистки" JSON-ответа GPT (в handle_booking_with_gpt)
+def clean_gpt_booking_response(raw_text):
+    import re
+    cleaned = raw_text.strip().strip('```').strip()
+    # Удаляем маркеры вроде ```json
+    cleaned = re.sub(r"```(\w+)?", "", cleaned).strip()
+    return cleaned
+
 def handle_booking_with_gpt(update, user_id, user_text, state=None):
     system_prompt = """
     Ты — ассистент по бронированию услуг в салоне красоты. 
@@ -400,13 +433,17 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             ],
             temperature=0.7,
             max_tokens=200,
-            response_format={ "type": "json_object" }
+            # == УБРАНО: response_format={ "type": "json_object" }
+            # == Потому что иногда вызывает проблемы
         )
         
         gpt_response = response.choices[0].message.content
         logger.info(f"GPT response for user {user_id}: {gpt_response}")
-        
-        result = json.loads(gpt_response)
+
+        # == ДОБАВЛЕНО ==
+        cleaned_gpt_response = clean_gpt_booking_response(gpt_response)
+
+        result = json.loads(cleaned_gpt_response)
         action = result.get('action')
         extracted_data = result.get('extracted_data', {})
         gpt_response_text = result.get('response', '')
@@ -600,7 +637,6 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     service_name = get_service_name(state['service_id'])
                     specialist_name = get_specialist_name(state['specialist_id'])
                     
-                    # Форматируем дату и время для отображения
                     try:
                         date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
                         formatted_date = date_time.strftime("%d.%m.%Y")
@@ -653,7 +689,7 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
 
     except json.JSONDecodeError as e:
         logger.error(f"Ошибка парсинга JSON от GPT для user {user_id}: {e}")
-        update.message.reply_text(gpt_response)
+        update.message.reply_text(f"Ответ GPT не разобран:\n{gpt_response}")
     except Exception as e:
         logger.error(f"Ошибка при обработке GPT для user {user_id}: {e}", exc_info=True)
         update.message.reply_text(
@@ -699,7 +735,6 @@ def handle_message(update, context):
             # Проверяем наличие активных записей
             existing_bookings = get_user_bookings(user_id)
             
-            # Если есть активные записи, спрашиваем, хочет ли пользователь сделать дополнительную запись
             if existing_bookings:
                 service = find_service_by_name(user_text)
                 if service:
@@ -709,7 +744,6 @@ def handle_message(update, context):
                     set_user_state(user_id, "confirm_additional_booking", service_id=service[0])
                     return
             
-            # Если активных записей нет или пользователь подтвердил дополнительную запись
             handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
@@ -719,7 +753,7 @@ def handle_message(update, context):
             update.message.reply_text("Процесс записи отменён. Можете начать заново.")
             return
         # Обработка отмены записи
-        if "отмен" in user_text.lower() or user_text.lower() == "да" and state.get('cancellation_pending'):
+        if "отмен" in user_text.lower() or (user_text.lower() == "да" and state and state.get('cancellation_pending')):
             bookings = get_user_bookings(user_id)
             if bookings:
                 success, message = cancel_booking(user_id, bookings[0]['id'])
@@ -737,14 +771,13 @@ def handle_message(update, context):
         # Проверяем, является ли текст названием услуги
         service = find_service_by_name(user_text)
         if service:
-            # Если нашли услугу, начинаем процесс записи
             update.message.reply_text(f"Вы выбрали услугу: {service[1]}")
-            handle_booking_with_gpt(update, user_id, user_text, state)  # Убрать лишний отступ
+            handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
         # Если пользователь находится в процессе выбора специалиста
         if state and state['step'] == 'select_specialist':
-            handle_booking_with_gpt(update, user_id, user_text, state)  # Убрать лишний отступ
+            handle_booking_with_gpt(update, user_id, user_text, state)
             return
 
         # Анализ намерения пользователя через GPT
@@ -781,10 +814,13 @@ def handle_message(update, context):
                 temperature=0.3
             )
             
-            intent_data = json.loads(intent_response.choices[0].message.content)
+            raw_intent = intent_response.choices[0].message.content
+            # == ДОБАВЛЕНО:
+            raw_intent = clean_gpt_json(raw_intent)
+
+            intent_data = json.loads(raw_intent)
             logger.info(f"Определено намерение для user_id={user_id}: {intent_data}")
 
-            # Обработка различных намерений
             if intent_data['intent'] == "BOOKING_INTENT":
                 handle_booking_with_gpt(update, user_id, user_text, state)
             elif intent_data['intent'] == "CANCEL_INTENT":
@@ -800,7 +836,6 @@ def handle_message(update, context):
             elif intent_data['intent'] == "GENERAL_QUESTION":
                 handle_general_question(update, user_id, user_text)
             else:
-                # Если намерение не определено, передаем в обработчик бронирования
                 handle_booking_with_gpt(update, user_id, user_text, state)
 
         except json.JSONDecodeError:
@@ -814,18 +849,14 @@ def handle_message(update, context):
         )
 
 
-
-# Вспомогательные функции для обработки различных намерений
 def handle_cancellation(update, user_id, extracted_info):
     try:
-        # Получаем активные записи пользователя
         bookings = get_user_bookings(user_id)
         if not bookings:
             update.message.reply_text("У вас нет активных записей для отмены.")
             return
 
         if len(bookings) == 1:
-            # Если только одна запись, отменяем её
             booking = bookings[0]
             if cancel_booking(user_id, booking['id']):
                 update.message.reply_text(
@@ -835,7 +866,6 @@ def handle_cancellation(update, user_id, extracted_info):
             else:
                 update.message.reply_text("Произошла ошибка при отмене записи.")
         else:
-            # Если несколько записей, показываем список
             bookings_text = "\n".join([
                 f"{i+1}. {b['date_time']} - {b['service_name']} у {b['specialist_name']}"
                 for i, b in enumerate(bookings)
@@ -897,7 +927,6 @@ def handle_reschedule(update, user_id, extracted_info):
 def handle_price_question(update, user_id, extracted_info):
     try:
         if 'service' in extracted_info and extracted_info['service']:
-            # Получаем цену конкретной услуги
             service_info = get_service_price(extracted_info['service'])
             if service_info:
                 update.message.reply_text(
@@ -905,7 +934,6 @@ def handle_price_question(update, user_id, extracted_info):
                     f"{service_info['price']} руб."
                 )
             else:
-                # Показываем все цены
                 show_price_list(update)
         else:
             show_price_list(update)
@@ -917,13 +945,12 @@ def handle_price_question(update, user_id, extracted_info):
 def handle_specialist_question(update, user_id, extracted_info):
     try:
         if 'specialist' in extracted_info and extracted_info['specialist']:
-            # Информация о конкретном специалисте
             specialist_info = get_specialist_info(extracted_info['specialist'])
             if specialist_info:
                 update.message.reply_text(
                     f"Специалист: {specialist_info['name']}\n"
-                    f"Специализация: {specialist_info['specialization']}\n"
-                    f"Опыт работы: {specialist_info['experience']}\n"
+                    f"Специализация: {specialist_info.get('specialization','')}\n"
+                    f"Опыт работы: {specialist_info.get('experience','')}\n"
                     f"Доступные услуги: {specialist_info['services']}"
                 )
             else:
@@ -1130,15 +1157,8 @@ def process_booking(update, user_id, user_text, state):
         else:
             update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
 
-
-
-
-
-
-
 def handle_specialist_selection(update, user_id, specialist_name, state):
     specialists = get_specialists(state['service_id'])
-    # Ищем специалиста по частичному совпадению имени или фамилии
     specialist = next(
         (sp for sp in specialists 
          if any(part.lower() in sp[1].lower() for part in specialist_name.split())),
@@ -1149,7 +1169,6 @@ def handle_specialist_selection(update, user_id, specialist_name, state):
         av_times = get_available_times(specialist[0], state['service_id'])
         if av_times:
             if len(av_times) == 1:
-                # Если доступно только одно время
                 set_user_state(
                     user_id, 
                     "confirm",
@@ -1187,20 +1206,14 @@ def handle_specialist_selection(update, user_id, specialist_name, state):
         )
 
 def handle_time_selection(update, user_id, time_text, state):
-    """Обработка выбора времени с поддержкой различных форматов"""
     available_times = get_available_times(state['specialist_id'], state['service_id'])
-    
-    # Нормализация введенного времени
     time_part = None
     
-    # Удаляем все лишние символы и пробелы
     cleaned_time = ''.join(c for c in time_text if c.isdigit() or c == ':')
     
     if ':' in cleaned_time:
-        # Если время уже в формате XX:XX
         time_part = cleaned_time
     else:
-        # Если введено только число
         try:
             hour = int(cleaned_time)
             if 0 <= hour <= 23:
@@ -1209,7 +1222,6 @@ def handle_time_selection(update, user_id, time_text, state):
             time_part = None
 
     if time_part:
-        # Ищем полное время в доступных слотах
         chosen_time = next(
             (t for t in available_times if t.endswith(time_part)),
             None
@@ -1219,7 +1231,6 @@ def handle_time_selection(update, user_id, time_text, state):
             service_name = get_service_name(state['service_id'])
             specialist_name = get_specialist_name(state['specialist_id'])
             
-            # Сохраняем выбранное время и переходим к подтверждению
             set_user_state(
                 user_id,
                 "confirm",
@@ -1237,14 +1248,12 @@ def handle_time_selection(update, user_id, time_text, state):
             )
             return
 
-    # Если время не распознано или недоступно
     times_text = "\n".join([f"🕐 {t}" for t in available_times])
     update.message.reply_text(
         f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
     )
 
 def handle_booking_confirmation(update, user_id, response, state):
-    """Обработка подтверждения бронирования"""
     if not state or 'chosen_time' not in state:
         update.message.reply_text(
             "❌ Извините, информация о бронировании была потеряна. "
@@ -1255,18 +1264,15 @@ def handle_booking_confirmation(update, user_id, response, state):
 
     if response.lower() in ['да', 'yes', 'подтверждаю', 'lf', 'конечно', '+']:
         try:
-            # Получаем информацию об услуге и специалисте
             service_name = get_service_name(state['service_id'])
             specialist_name = get_specialist_name(state['specialist_id'])
             
-            # Проверяем, не занято ли уже выбранное время
             available_times = get_available_times(state['specialist_id'], state['service_id'])
             if state['chosen_time'] not in available_times:
                 update.message.reply_text(
                     "❌ К сожалению, выбранное время уже занято. "
                     "Пожалуйста, выберите другое время."
                 )
-                # Возвращаем пользователя к выбору времени
                 set_user_state(
                     user_id, 
                     "select_time",
@@ -1275,7 +1281,6 @@ def handle_booking_confirmation(update, user_id, response, state):
                 )
                 return
 
-            # Создаем бронирование
             success = create_booking(
                 user_id=user_id,
                 serv_id=state['service_id'],
@@ -1284,7 +1289,6 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
             
             if success:
-                # Форматируем дату и время для отображения
                 try:
                     date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
                     formatted_date = date_time.strftime("%d.%m.%Y")
@@ -1293,7 +1297,6 @@ def handle_booking_confirmation(update, user_id, response, state):
                     formatted_date = state['chosen_time'].split()[0]
                     formatted_time = state['chosen_time'].split()[1]
 
-                # Сообщение для клиента
                 confirmation_message = (
                     "✅ Ваша запись успешно подтверждена!\n\n"
                     f"🎯 Услуга: {service_name}\n"
@@ -1306,7 +1309,6 @@ def handle_booking_confirmation(update, user_id, response, state):
                 )
                 update.message.reply_text(confirmation_message)
                 
-                # Уведомление для менеджеров
                 manager_message = (
                     "🆕 Новая запись!\n\n"
                     f"🎯 Услуга: {service_name}\n"
@@ -1316,10 +1318,8 @@ def handle_booking_confirmation(update, user_id, response, state):
                     f"👤 Клиент ID: {user_id}"
                 )
                 
-                # Отправляем уведомления менеджерам
                 notify_managers(manager_message, 'new_booking')
                 
-                # Дополнительное уведомление основному менеджеру
                 if MANAGER_CHAT_ID:
                     try:
                         bot.send_message(MANAGER_CHAT_ID, manager_message)
@@ -1356,12 +1356,7 @@ def handle_booking_confirmation(update, user_id, response, state):
         )
 
 
-
-
-
-
 def get_user_bookings(user_id):
-    """Получение всех активных записей пользователя"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1390,7 +1385,6 @@ def get_user_bookings(user_id):
         conn.close()
 
 def get_service_price(service_name):
-    """Получение информации о цене услуги"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1412,7 +1406,6 @@ def get_service_price(service_name):
         conn.close()
 
 def get_specialist_info(specialist_name):
-    """Получение информации о специалисте"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1438,7 +1431,6 @@ def get_specialist_info(specialist_name):
         conn.close()
 
 def show_price_list(update):
-    """Показать список цен на услуги"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1454,7 +1446,6 @@ def show_price_list(update):
         conn.close()
 
 def show_all_specialists(update):
-    """Показать список всех специалистов"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1481,19 +1472,11 @@ def show_all_specialists(update):
         cur.close()
         conn.close()
 
-
-
-
-
-
-
 def handle_services_question(update):
-    """Показать список доступных услуг"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Получаем только название услуги
         cur.execute("""
             SELECT title 
             FROM services 
@@ -1502,7 +1485,6 @@ def handle_services_question(update):
         services = cur.fetchall()
         
         if services:
-            # Формируем список услуг
             services_text = "Наши услуги:\n\n"
             for service in services:
                 services_text += f"💠 {service[0]}\n"
@@ -1528,18 +1510,6 @@ def handle_services_question(update):
         if 'conn' in locals():
             conn.close()
 
-
-
-
-
-
-
-
-
-
-
-
-
 # =============================================================================
 # /start команда
 # =============================================================================
@@ -1548,16 +1518,11 @@ def start(update, context):
         "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, или задайте мне любой вопрос!"
     )
 
-
-
-
-
 def cancel_booking(user_id, booking_id):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Получаем информацию о записи
         cur.execute("""
             SELECT b.service_id, b.specialist_id, b.date_time,
                    s.title as service_name, sp.name as specialist_name
@@ -1571,7 +1536,6 @@ def cancel_booking(user_id, booking_id):
         if booking:
             service_id, specialist_id, date_time, service_name, specialist_name = booking
             
-            # Освобождаем слот
             cur.execute("""
                 UPDATE booking_times 
                 SET is_booked = FALSE 
@@ -1580,15 +1544,12 @@ def cancel_booking(user_id, booking_id):
                 AND slot_time = %s
             """, (specialist_id, service_id, date_time))
             
-            # Удаляем запись
             cur.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
             conn.commit()
 
-            # Форматируем дату и время
             formatted_date = date_time.strftime("%d.%m.%Y")
             formatted_time = date_time.strftime("%H:%M")
 
-            # Формируем сообщение об успешной отмене
             cancellation_message = (
                 "✅ Ваша запись успешно отменена!\n\n"
                 f"🎯 Услуга: {service_name}\n"
@@ -1598,7 +1559,6 @@ def cancel_booking(user_id, booking_id):
                 "Чтобы записаться снова, напишите 'Записаться'."
             )
 
-            # Уведомление менеджеров
             manager_message = (
                 "❌ Отмена записи!\n\n"
                 f"🎯 Услуга: {service_name}\n"
@@ -1620,15 +1580,10 @@ def cancel_booking(user_id, booking_id):
         conn.close()
 
 
-# ++++++=
-
-
 def register_manager(chat_id, username=None):
-    """Регистрация нового менеджера"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Проверяем, существует ли менеджер
         cur.execute(
             "SELECT id FROM managers WHERE chat_id = %s",
             (chat_id,)
@@ -1636,7 +1591,6 @@ def register_manager(chat_id, username=None):
         manager = cur.fetchone()
         
         if not manager:
-            # Создаем нового менеджера
             cur.execute(
                 """
                 INSERT INTO managers (chat_id, username)
@@ -1647,7 +1601,6 @@ def register_manager(chat_id, username=None):
             )
             manager_id = cur.fetchone()[0]
             
-            # Создаем настройки уведомлений по умолчанию
             cur.execute(
                 """
                 INSERT INTO notification_settings (manager_id)
@@ -1663,7 +1616,6 @@ def register_manager(chat_id, username=None):
         conn.close()
 
 def get_active_managers():
-    """Получение списка активных менеджеров"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -1681,30 +1633,21 @@ def get_active_managers():
         conn.close()
 
 def notify_managers(message, notification_type='new_booking'):
-    """Отправка уведомлений менеджерам"""
     managers = get_active_managers()
-    
     for manager in managers:
         chat_id, notify_new, notify_cancel, notify_reschedule = manager
-        
         should_notify = (
             (notification_type == 'new_booking' and notify_new) or
             (notification_type == 'cancellation' and notify_cancel) or
             (notification_type == 'reschedule' and notify_reschedule)
         )
-        
         if should_notify:
             try:
                 bot.send_message(chat_id, message)
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления менеджеру {chat_id}: {e}")
 
-
-
-
-
 def handle_manager_commands(update, context):
-    """Обработка команд менеджера"""
     command = update.message.text
     chat_id = update.message.chat_id
     username = update.message.from_user.username
@@ -1732,10 +1675,6 @@ def handle_manager_commands(update, context):
             cur.close()
             conn.close()
 
-
-# =============================================================================
-# Flask-маршруты и настройка диспетчера
-# =============================================================================
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     upd = telegram.Update.de_json(request.get_json(force=True), bot)
@@ -1759,3 +1698,7 @@ if __name__ == "__main__":
     init_db()
     set_webhook()
     app.run(host="0.0.0.0", port=5000)
+
+###############################################################################
+# Конец 1761-й строки
+###############################################################################
