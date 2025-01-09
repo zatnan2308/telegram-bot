@@ -48,6 +48,14 @@ def init_db():
     finally:
         cur.close()
         conn.close()
+        
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    # Добавляем обработчики команд менеджера
+    dp.add_handler(CommandHandler("register_manager", handle_manager_commands))
+    dp.add_handler(CommandHandler("stop_notifications", handle_manager_commands))
 
 def register_user(user_id, user_name, phone="0000000000"):
     conn = get_db_connection()
