@@ -609,6 +609,21 @@ def handle_message(update, context):
             delete_user_state(user_id)
             update.message.reply_text("Процесс записи отменён. Можете начать заново.")
             return
+        # Обработка отмены записи
+        if "отмен" in user_text.lower() or user_text.lower() == "да" and state.get('cancellation_pending'):
+            bookings = get_user_bookings(user_id)
+            if bookings:
+                success, message = cancel_booking(user_id, bookings[0]['id'])
+                if success:
+                    update.message.reply_text(message)
+                else:
+                    update.message.reply_text(
+                        "❌ Не удалось отменить запись. Пожалуйста, попробуйте позже или свяжитесь с администратором."
+                    )
+            else:
+                update.message.reply_text("У вас нет активных записей для отмены.")
+            delete_user_state(user_id)
+            return    
 
         # Проверяем, является ли текст названием услуги
         service = find_service_by_name(user_text)
