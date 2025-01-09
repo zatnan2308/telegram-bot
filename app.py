@@ -497,6 +497,7 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
     """
    if state and state.get('step') == 'confirm':
         action = "CONFIRM_BOOKING"
+        pass
     
     system_prompt = """
     Ты — ассистент по бронированию услуг в салоне красоты. 
