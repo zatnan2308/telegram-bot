@@ -295,17 +295,6 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
     - CONFIRM_BOOKING: подтвердить запись
     - CANCEL_BOOKING: отменить запись
     - RESCHEDULE: перенести запись
-    
-    Отвечай в формате JSON:
-    {
-        "action": "действие",
-        "response": "ответ пользователю",
-        "extracted_data": {
-            "service": "название услуги",
-            "specialist": "имя специалиста",
-            "time": "время"
-        }
-    }
     """
 
     # Получаем контекст предыдущего состояния
@@ -322,60 +311,158 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
             context += f"Выбранное время: {state['chosen_time']}\n"
 
     try:
+        # Запрос к GPT
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Контекст:\n{context}\nСообщение пользователя: {user_text}"}
             ],
-            temperature=0.7
+            temperature=0.7,
+            max_tokens=200
         )
         
-        result = json.loads(response.choices[0].message.content)
+        # Логируем ответ GPT
+        logger.info(f"GPT response for user {user_id}: {response.choices[0].message.content}")
         
-        # Обработка действий на основе ответа GPT
+        result = json.loads(response.choices[0].message.content)
         action = result.get('action')
+        extracted_data = result.get('extracted_data', {})
+
         if action == "LIST_SERVICES":
             services = get_services()
-            service_list = "\n".join([f"- {s[1]}" for s in services])
-            update.message.reply_text(f"{result['response']}\n\nДоступные услуги:\n{service_list}")
-            
-        elif action == "SELECT_SERVICE":
-            service_name = result['extracted_data'].get('service')
-            if service_name:
-                services = get_services()
-                service = next((s for s in services if s[1].lower() == service_name.lower()), None)
-                if service:
-                    set_user_state(user_id, "select_specialist", service_id=service[0])
-                    specialists = get_specialists(service_id=service[0])
-                    sp_text = "\n".join([f"- {sp[1]}" for sp in specialists])
-                    update.message.reply_text(f"{result['response']}\n\nДоступные специалисты:\n{sp_text}")
-                else:
-                    update.message.reply_text("Извините, такой услуги нет в списке. Попробуйте еще раз.")
+            if services:
+                service_list = "\n".join([f"- {s[1]}" for s in services])
+                update.message.reply_text(f"Доступные услуги:\n{service_list}")
             else:
-                update.message.reply_text(result['response'])
+                update.message.reply_text("К сожалению, сейчас нет доступных услуг.")
+
+        elif action == "SELECT_SERVICE":
+            service_name = extracted_data.get('service')
+            if not service_name:
+                services = get_services()
+                service_list = "\n".join([f"- {s[1]}" for s in services])
+                update.message.reply_text(
+                    "Пожалуйста, выберите услугу из списка:\n\n"
+                    f"{service_list}"
+                )
+                return
+
+            services = get_services()
+            service = next(
+                (s for s in services if s[1].lower() == service_name.lower() or 
+                 service_name.lower() in s[1].lower()),
+                None
+            )
+            
+            if service:
+                specialists = get_specialists(service_id=service[0])
+                if specialists:
+                    set_user_state(user_id, "select_specialist", service_id=service[0])
+                    sp_text = "\n".join([f"- {sp[1]}" for sp in specialists])
+                    update.message.reply_text(
+                        f"Вы выбрали услугу: {service[1]}\n\n"
+                        f"Доступные специалисты:\n{sp_text}"
+                    )
+                else:
+                    update.message.reply_text(
+                        "К сожалению, сейчас нет доступных специалистов для этой услуги."
+                    )
+            else:
+                update.message.reply_text(
+                    "Извините, такой услуги нет в списке. Пожалуйста, выберите из доступных услуг."
+                )
 
         elif action == "SELECT_SPECIALIST":
-            if state and state.get('service_id'):
-                specialist_name = result['extracted_data'].get('specialist')
+            if not state or not state.get('service_id'):
+                update.message.reply_text("Сначала выберите услугу.")
+                return
+
+            specialist_name = extracted_data.get('specialist')
+            if not specialist_name:
                 specialists = get_specialists(state['service_id'])
-                specialist = next((s for s in specialists if s[1].lower() == specialist_name.lower()), None)
-                
-                if specialist:
-                    available_times = get_available_times(specialist[0], state['service_id'])
-                    if available_times:
-                        set_user_state(user_id, "select_time", 
-                                     service_id=state['service_id'],
-                                     specialist_id=specialist[0])
-                        times_text = "\n".join([f"- {t}" for t in available_times])
-                        update.message.reply_text(f"{result['response']}\n\nДоступное время:\n{times_text}")
-                    else:
-                        update.message.reply_text("К сожалению, у этого специалиста нет свободного времени.")
+                sp_text = "\n".join([f"- {sp[1]}" for sp in specialists])
+                update.message.reply_text(
+                    "Пожалуйста, выберите специалиста из списка:\n\n"
+                    f"{sp_text}"
+                )
+                return
+
+            specialists = get_specialists(state['service_id'])
+            specialist = next(
+                (s for s in specialists if s[1].lower() == specialist_name.lower() or 
+                 specialist_name.lower() in s[1].lower()),
+                None
+            )
+
+            if specialist:
+                available_times = get_available_times(specialist[0], state['service_id'])
+                if available_times:
+                    set_user_state(
+                        user_id, 
+                        "select_time",
+                        service_id=state['service_id'],
+                        specialist_id=specialist[0]
+                    )
+                    times_text = "\n".join([f"- {t}" for t in available_times])
+                    update.message.reply_text(
+                        f"Вы выбрали специалиста: {specialist[1]}\n\n"
+                        f"Доступное время:\n{times_text}\n\n"
+                        "Выберите удобное время из списка."
+                    )
                 else:
-                    update.message.reply_text("Специалист не найден. Попробуйте еще раз.")
+                    update.message.reply_text(
+                        f"К сожалению, у специалиста {specialist[1]} нет свободного времени."
+                    )
+            else:
+                specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
+                update.message.reply_text(
+                    "Специалист не найден. Выберите из списка:\n\n"
+                    f"{specialists_text}"
+                )
+
+        elif action == "SELECT_TIME":
+            if not state or not all(k in state for k in ['service_id', 'specialist_id']):
+                update.message.reply_text("Сначала выберите услугу и специалиста.")
+                return
+
+            chosen_time = extracted_data.get('time')
+            if not chosen_time:
+                available_times = get_available_times(state['specialist_id'], state['service_id'])
+                times_text = "\n".join([f"- {t}" for t in available_times])
+                update.message.reply_text(
+                    "Пожалуйста, выберите время из списка:\n\n"
+                    f"{times_text}"
+                )
+                return
+
+            available_times = get_available_times(state['specialist_id'], state['service_id'])
+            if chosen_time in available_times:
+                set_user_state(
+                    user_id,
+                    "confirm",
+                    service_id=state['service_id'],
+                    specialist_id=state['specialist_id'],
+                    chosen_time=chosen_time
+                )
+                service_name = get_service_name(state['service_id'])
+                specialist_name = get_specialist_name(state['specialist_id'])
+                update.message.reply_text(
+                    f"Подтвердите запись:\n\n"
+                    f"Услуга: {service_name}\n"
+                    f"Специалист: {specialist_name}\n"
+                    f"Время: {chosen_time}\n\n"
+                    "Для подтверждения напишите 'да' или 'нет' для отмены."
+                )
+            else:
+                update.message.reply_text("Выбранное время недоступно. Пожалуйста, выберите другое время.")
 
         elif action == "CONFIRM_BOOKING":
-            if state and all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
+            if not state or not all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
+                update.message.reply_text("Недостаточно информации для создания записи.")
+                return
+
+            if user_text.lower() in ['да', 'yes', 'подтверждаю']:
                 success = create_booking(
                     user_id=user_id,
                     serv_id=state['service_id'],
@@ -383,36 +470,298 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                     date_str=state['chosen_time']
                 )
                 if success:
-                    update.message.reply_text(result['response'])
-                    delete_user_state(user_id)
+                    service_name = get_service_name(state['service_id'])
+                    specialist_name = get_specialist_name(state['specialist_id'])
+                    update.message.reply_text(
+                        f"Запись успешно создана!\n\n"
+                        f"Услуга: {service_name}\n"
+                        f"Специалист: {specialist_name}\n"
+                        f"Время: {state['chosen_time']}\n\n"
+                        "Будем ждать вас!"
+                    )
+                    # Отправляем уведомление менеджеру
+                    if MANAGER_CHAT_ID:
+                        bot.send_message(
+                            MANAGER_CHAT_ID,
+                            f"Новая запись!\n"
+                            f"Услуга: {service_name}\n"
+                            f"Специалист: {specialist_name}\n"
+                            f"Время: {state['chosen_time']}\n"
+                            f"Клиент ID: {user_id}"
+                        )
                 else:
-                    update.message.reply_text("Произошла ошибка при создании записи. Попробуйте позже.")
-            else:
-                update.message.reply_text("Недостаточно информации для создания записи.")
+                    update.message.reply_text("Произошла ошибка при создании записи. Пожалуйста, попробуйте позже.")
+                delete_user_state(user_id)
+            elif user_text.lower() in ['нет', 'no', 'отмена']:
+                update.message.reply_text("Запись отменена.")
+                delete_user_state(user_id)
 
         elif action == "CANCEL_BOOKING":
-            # Добавить логику отмены записи
             delete_user_state(user_id)
-            update.message.reply_text(result['response'])
+            update.message.reply_text("Процесс записи отменён. Можете начать заново.")
 
         else:
-            update.message.reply_text(result['response'])
+            update.message.reply_text(result.get('response', "Извините, я не понял ваш запрос."))
 
+    except json.JSONDecodeError as e:
+        logger.error(f"Ошибка парсинга JSON от GPT для user {user_id}: {e}")
+        update.message.reply_text("Произошла ошибка обработки. Попробуйте еще раз.")
     except Exception as e:
-        logger.error(f"Ошибка при обработке GPT: {e}")
-        update.message.reply_text("Произошла ошибка. Пожалуйста, попробуйте позже.")
+        logger.error(f"Ошибка при обработке GPT для user {user_id}: {e}", exc_info=True)
+        update.message.reply_text(
+            "Произошла ошибка. Пожалуйста, попробуйте сформулировать ваш запрос иначе или начните сначала."
+        )
+
+
+
+
+
 
 # Обновляем основной обработчик сообщений
 def handle_message(update, context):
-    user_text = update.message.text.strip()
-    user_id = update.message.chat_id
-    user_name = update.message.chat.first_name or "Unknown"
+    try:
+        user_text = update.message.text.strip()
+        user_id = update.message.chat_id
+        user_name = update.message.chat.first_name or "Unknown"
+        
+        logger.info(f"Получено сообщение от user_id={user_id}, name={user_name}: {user_text}")
 
-    register_user(user_id, user_name)
-    state = get_user_state(user_id)
-    
-    # Передаем обработку GPT
-    handle_booking_with_gpt(update, user_id, user_text, state)
+        # Регистрируем пользователя
+        register_user(user_id, user_name)
+        
+        # Получаем текущее состояние
+        state = get_user_state(user_id)
+        logger.info(f"Текущее состояние для user_id={user_id}: {state}")
+
+        # Базовые команды отмены
+        if user_text.lower() in ['отмена', 'cancel', 'стоп', 'stop']:
+            delete_user_state(user_id)
+            update.message.reply_text("Процесс записи отменён. Можете начать заново.")
+            return
+
+        # Анализ намерения пользователя через GPT
+        system_prompt = """
+        Ты — ассистент салона красоты. Определи намерение пользователя:
+        1. GENERAL_QUESTION - общий вопрос о салоне/услугах
+        2. BOOKING_INTENT - намерение записаться
+        3. CANCEL_INTENT - намерение отменить запись
+        4. RESCHEDULE_INTENT - намерение перенести запись
+        5. PRICE_QUESTION - вопрос о ценах
+        6. SPECIALIST_QUESTION - вопрос о специалистах
+        7. OTHER - другое
+
+        Ответ дай в формате JSON:
+        {
+            "intent": "тип намерения",
+            "confidence": float от 0 до 1,
+            "extracted_info": {
+                "service": "название услуги если есть",
+                "specialist": "имя специалиста если есть",
+                "date": "дата если есть"
+            }
+        }
+        """
+
+        try:
+            intent_response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                temperature=0.3
+            )
+            
+            intent_data = json.loads(intent_response.choices[0].message.content)
+            logger.info(f"Определено намерение для user_id={user_id}: {intent_data}")
+
+            # Обработка различных намерений
+            if intent_data['intent'] == "BOOKING_INTENT":
+                # Передаем в основной обработчик бронирования
+                handle_booking_with_gpt(update, user_id, user_text, state)
+                
+            elif intent_data['intent'] == "CANCEL_INTENT":
+                # Обработка отмены записи
+                handle_cancellation(update, user_id, intent_data['extracted_info'])
+                
+            elif intent_data['intent'] == "RESCHEDULE_INTENT":
+                # Обработка переноса записи
+                handle_reschedule(update, user_id, intent_data['extracted_info'])
+                
+            elif intent_data['intent'] == "PRICE_QUESTION":
+                # Ответ на вопрос о ценах
+                handle_price_question(update, user_id, intent_data['extracted_info'])
+                
+            elif intent_data['intent'] == "SPECIALIST_QUESTION":
+                # Информация о специалистах
+                handle_specialist_question(update, user_id, intent_data['extracted_info'])
+                
+            elif intent_data['intent'] == "GENERAL_QUESTION":
+                # Обработка общих вопросов через GPT
+                handle_general_question(update, user_id, user_text)
+                
+            else:
+                # Общий ответ через GPT
+                response = generate_ai_response(user_text)
+                update.message.reply_text(response)
+
+        except json.JSONDecodeError:
+            logger.error("Ошибка парсинга JSON от GPT")
+            handle_booking_with_gpt(update, user_id, user_text, state)
+
+    except Exception as e:
+        logger.error(f"Ошибка в handle_message: {e}", exc_info=True)
+        update.message.reply_text(
+            "Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте позже или напишите /start"
+        )
+
+# Вспомогательные функции для обработки различных намерений
+def handle_cancellation(update, user_id, extracted_info):
+    try:
+        # Получаем активные записи пользователя
+        bookings = get_user_bookings(user_id)
+        if not bookings:
+            update.message.reply_text("У вас нет активных записей для отмены.")
+            return
+
+        if len(bookings) == 1:
+            # Если только одна запись, отменяем её
+            booking = bookings[0]
+            if cancel_booking(user_id, booking['id']):
+                update.message.reply_text(
+                    f"Ваша запись на {booking['date_time']} "
+                    f"к {booking['specialist_name']} была отменена."
+                )
+            else:
+                update.message.reply_text("Произошла ошибка при отмене записи.")
+        else:
+            # Если несколько записей, показываем список
+            bookings_text = "\n".join([
+                f"{i+1}. {b['date_time']} - {b['service_name']} у {b['specialist_name']}"
+                for i, b in enumerate(bookings)
+            ])
+            update.message.reply_text(
+                "У вас несколько записей. Какую хотите отменить?\n\n"
+                f"{bookings_text}\n\n"
+                "Укажите номер записи для отмены."
+            )
+            set_user_state(user_id, "canceling_booking", bookings=bookings)
+
+    except Exception as e:
+        logger.error(f"Ошибка при отмене записи: {e}")
+        update.message.reply_text("Произошла ошибка при отмене записи.")
+
+def handle_reschedule(update, user_id, extracted_info):
+    try:
+        bookings = get_user_bookings(user_id)
+        if not bookings:
+            update.message.reply_text("У вас нет активных записей для переноса.")
+            return
+
+        if len(bookings) == 1:
+            booking = bookings[0]
+            available_times = get_available_times(
+                booking['specialist_id'], 
+                booking['service_id']
+            )
+            if available_times:
+                times_text = "\n".join([f"- {t}" for t in available_times])
+                update.message.reply_text(
+                    f"Выберите новое время для записи:\n\n{times_text}"
+                )
+                set_user_state(
+                    user_id, 
+                    "rescheduling", 
+                    booking_id=booking['id']
+                )
+            else:
+                update.message.reply_text(
+                    "К сожалению, нет доступного времени для переноса записи."
+                )
+        else:
+            bookings_text = "\n".join([
+                f"{i+1}. {b['date_time']} - {b['service_name']} у {b['specialist_name']}"
+                for i, b in enumerate(bookings)
+            ])
+            update.message.reply_text(
+                "У вас несколько записей. Какую хотите перенести?\n\n"
+                f"{bookings_text}\n\n"
+                "Укажите номер записи для переноса."
+            )
+            set_user_state(user_id, "selecting_reschedule", bookings=bookings)
+
+    except Exception as e:
+        logger.error(f"Ошибка при переносе записи: {e}")
+        update.message.reply_text("Произошла ошибка при переносе записи.")
+
+def handle_price_question(update, user_id, extracted_info):
+    try:
+        if 'service' in extracted_info and extracted_info['service']:
+            # Получаем цену конкретной услуги
+            service_info = get_service_price(extracted_info['service'])
+            if service_info:
+                update.message.reply_text(
+                    f"Стоимость услуги '{service_info['name']}': "
+                    f"{service_info['price']} руб."
+                )
+            else:
+                # Показываем все цены
+                show_price_list(update)
+        else:
+            show_price_list(update)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке вопроса о ценах: {e}")
+        update.message.reply_text("Произошла ошибка при получении информации о ценах.")
+
+def handle_specialist_question(update, user_id, extracted_info):
+    try:
+        if 'specialist' in extracted_info and extracted_info['specialist']:
+            # Информация о конкретном специалисте
+            specialist_info = get_specialist_info(extracted_info['specialist'])
+            if specialist_info:
+                update.message.reply_text(
+                    f"Специалист: {specialist_info['name']}\n"
+                    f"Специализация: {specialist_info['specialization']}\n"
+                    f"Опыт работы: {specialist_info['experience']}\n"
+                    f"Доступные услуги: {specialist_info['services']}"
+                )
+            else:
+                show_all_specialists(update)
+        else:
+            show_all_specialists(update)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке вопроса о специалистах: {e}")
+        update.message.reply_text("Произошла ошибка при получении информации о специалистах.")
+
+def handle_general_question(update, user_id, question):
+    try:
+        system_prompt = """
+        Ты — дружелюбный ассистент салона красоты. Отвечай на вопросы клиентов.
+        Используй вежливый тон и предоставляй полезную информацию.
+        Если не знаешь точного ответа, предложи связаться с администратором.
+        """
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            temperature=0.7,
+            max_tokens=150
+        )
+        
+        answer = response.choices[0].message.content.strip()
+        update.message.reply_text(answer)
+
+    except Exception as e:
+        logger.error(f"Ошибка при обработке общего вопроса: {e}")
+        update.message.reply_text(
+            "Извините, я не смог обработать ваш вопрос. "
+            "Пожалуйста, попробуйте переформулировать или обратитесь к администратору."
+        )
 
 # =============================================================================
 # Функция пошаговой логики бронирования
@@ -568,6 +917,163 @@ def process_booking(update, user_id, user_text, state):
             delete_user_state(user_id)
         else:
             update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_user_bookings(user_id):
+    """Получение всех активных записей пользователя"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT b.id, b.service_id, b.specialist_id, b.date_time,
+                   s.title as service_name, sp.name as specialist_name
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            JOIN specialists sp ON b.specialist_id = sp.id
+            WHERE b.user_id = %s AND b.date_time > NOW()
+            ORDER BY b.date_time
+        """, (user_id,))
+        bookings = []
+        for row in cur.fetchall():
+            bookings.append({
+                'id': row[0],
+                'service_id': row[1],
+                'specialist_id': row[2],
+                'date_time': row[3].strftime("%Y-%m-%d %H:%M"),
+                'service_name': row[4],
+                'specialist_name': row[5]
+            })
+        return bookings
+    finally:
+        cur.close()
+        conn.close()
+
+def get_service_price(service_name):
+    """Получение информации о цене услуги"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id, title, price 
+            FROM services 
+            WHERE LOWER(title) LIKE LOWER(%s)
+        """, (f"%{service_name}%",))
+        row = cur.fetchone()
+        if row:
+            return {
+                'id': row[0],
+                'name': row[1],
+                'price': row[2]
+            }
+        return None
+    finally:
+        cur.close()
+        conn.close()
+
+def get_specialist_info(specialist_name):
+    """Получение информации о специалисте"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT s.id, s.name, s.specialization, s.experience,
+                   STRING_AGG(srv.title, ', ') as services
+            FROM specialists s
+            LEFT JOIN specialist_services ss ON s.id = ss.specialist_id
+            LEFT JOIN services srv ON ss.service_id = srv.id
+            WHERE LOWER(s.name) LIKE LOWER(%s)
+            GROUP BY s.id, s.name, s.specialization, s.experience
+        """, (f"%{specialist_name}%",))
+        row = cur.fetchone()
+        if row:
+            return {
+                'id': row[0],
+                'name': row[1],
+                'specialization': row[2],
+                'experience': row[3],
+                'services': row[4]
+            }
+        return None
+    finally:
+        cur.close()
+        conn.close()
+
+def show_price_list(update):
+    """Показать список цен на услуги"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT title, price FROM services ORDER BY title")
+        prices = cur.fetchall()
+        if prices:
+            price_list = "\n".join([f"• {row[0]}: {row[1]} руб." for row in prices])
+            update.message.reply_text(f"Прайс-лист:\n\n{price_list}")
+        else:
+            update.message.reply_text("К сожалению, информация о ценах временно недоступна.")
+    finally:
+        cur.close()
+        conn.close()
+
+def show_all_specialists(update):
+    """Показать список всех специалистов"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT s.name, s.specialization, STRING_AGG(srv.title, ', ') as services
+            FROM specialists s
+            LEFT JOIN specialist_services ss ON s.id = ss.specialist_id
+            LEFT JOIN services srv ON ss.service_id = srv.id
+            GROUP BY s.id, s.name, s.specialization
+            ORDER BY s.name
+        """)
+        specialists = cur.fetchall()
+        if specialists:
+            spec_list = "\n\n".join([
+                f"🎓 {row[0]}\n"
+                f"Специализация: {row[1]}\n"
+                f"Услуги: {row[2]}"
+                for row in specialists
+            ])
+            update.message.reply_text(f"Наши специалисты:\n\n{spec_list}")
+        else:
+            update.message.reply_text("К сожалению, информация о специалистах временно недоступна.")
+    finally:
+        cur.close()
+        conn.close()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # =============================================================================
 # /start команда
