@@ -1037,19 +1037,23 @@ def handle_time_selection(update, user_id, time_text, state):
     available_times = get_available_times(state['specialist_id'], state['service_id'])
     
     # Нормализация введенного времени
-    normalized_time = None
-    if ':' in time_text:
+    time_part = None
+    
+    # Удаляем все лишние символы и пробелы
+    cleaned_time = ''.join(c for c in time_text if c.isdigit() or c == ':')
+    
+    if ':' in cleaned_time:
         # Если время уже в формате XX:XX
-        time_part = time_text
+        time_part = cleaned_time
     else:
-        # Если введено только число, добавляем :00
+        # Если введено только число
         try:
-            hour = int(time_text)
+            hour = int(cleaned_time)
             if 0 <= hour <= 23:
                 time_part = f"{hour:02d}:00"
         except ValueError:
             time_part = None
-    
+
     if time_part:
         # Ищем полное время в доступных слотах
         chosen_time = next(
@@ -1082,8 +1086,7 @@ def handle_time_selection(update, user_id, time_text, state):
     # Если время не распознано или недоступно
     times_text = "\n".join([f"🕐 {t}" for t in available_times])
     update.message.reply_text(
-        "Пожалуйста, выберите точное время из списка:\n\n"
-        f"{times_text}"
+        f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
     )
 
 def handle_booking_confirmation(update, user_id, response, state):
@@ -1096,8 +1099,12 @@ def handle_booking_confirmation(update, user_id, response, state):
         delete_user_state(user_id)
         return
 
-    if response.lower() in ['да', 'yes', 'подтверждаю', 'lf']:  # добавляем 'lf' для случая русской раскладки
+    if response.lower() in ['да', 'yes', 'подтверждаю', 'lf']:
         try:
+            service_name = get_service_name(state['service_id'])
+            specialist_name = get_specialist_name(state['specialist_id'])
+            date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
+            
             success = create_booking(
                 user_id=user_id,
                 serv_id=state['service_id'],
@@ -1106,11 +1113,7 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
             
             if success:
-                service_name = get_service_name(state['service_id'])
-                specialist_name = get_specialist_name(state['specialist_id'])
-                date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
-                
-                update.message.reply_text(
+                confirmation_message = (
                     "✨ Благодарим вас за обращение в наш салон красоты!\n\n"
                     "Ваше бронирование успешно подтверждено:\n\n"
                     f"🎯 Услуга: {service_name}\n"
@@ -1120,66 +1123,13 @@ def handle_booking_confirmation(update, user_id, response, state):
                     "Если возникнут вопросы или необходимость внести изменения, "
                     "пожалуйста, свяжитесь с нами."
                 )
-            else:
-                update.message.reply_text(
-                    "❌ Произошла ошибка при создании записи. "
-                    "Пожалуйста, попробуйте позже."
-                )
-        except Exception as e:
-            logger.error(f"Ошибка при создании записи: {e}", exc_info=True)
-            update.message.reply_text(
-                "❌ Произошла ошибка при создании записи. "
-                "Пожалуйста, попробуйте позже."
-            )
-        finally:
-            delete_user_state(user_id)
-    elif response.lower() in ['нет', 'no', 'отмена', 'ytn']:  # добавляем 'ytn' для случая русской раскладки
-        update.message.reply_text("Запись отменена.")
-        delete_user_state(user_id)
-    else:
-        update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
-
-
-
-def handle_booking_confirmation(update, user_id, response, state):
-    if not state or 'chosen_time' not in state:
-        update.message.reply_text(
-            "Извините, информация о бронировании была потеряна. "
-            "Пожалуйста, начните процесс записи заново."
-        )
-        delete_user_state(user_id)
-        return
-
-    if response.lower() in ['да', 'yes', 'подтверждаю']:
-        try:
-            success = create_booking(
-                user_id=user_id,
-                serv_id=state['service_id'],
-                spec_id=state['specialist_id'],
-                date_str=state['chosen_time']
-            )
-            
-            if success:
-                service_name = get_service_name(state['service_id'])
-                specialist_name = get_specialist_name(state['specialist_id'])
-                date_time = datetime.datetime.strptime(state['chosen_time'], "%Y-%m-%d %H:%M")
-                
-                update.message.reply_text(
-                    "✨ Благодарим вас за обращение в наш салон красоты!\n\n"
-                    "Ваше бронирование успешно подтверждено:\n\n"
-                    f"🎯 Услуга: {service_name}\n"
-                    f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
-                    f"⏰ Время: {date_time.strftime('%H:%M')}\n"
-                    f"👩‍💼 Мастер: {specialist_name}\n\n"
-                    "Если возникнут вопросы или необходимость внести изменения, "
-                    "пожалуйста, свяжитесь с нами."
-                )
+                update.message.reply_text(confirmation_message)
                 
                 # Уведомление менеджеру
                 if MANAGER_CHAT_ID:
                     bot.send_message(
                         MANAGER_CHAT_ID,
-                        "🆕 Новая запись!\n\n"
+                        f"🆕 Новая запись!\n\n"
                         f"🎯 Услуга: {service_name}\n"
                         f"🗓 Дата: {date_time.strftime('%d.%m.%Y')}\n"
                         f"⏰ Время: {date_time.strftime('%H:%M')}\n"
@@ -1199,7 +1149,7 @@ def handle_booking_confirmation(update, user_id, response, state):
             )
         finally:
             delete_user_state(user_id)
-    elif response.lower() in ['нет', 'no', 'отмена']:
+    elif response.lower() in ['нет', 'no', 'отмена', 'ytn']:
         update.message.reply_text("Запись отменена.")
         delete_user_state(user_id)
     else:
