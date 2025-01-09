@@ -35,10 +35,19 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
+    """Проверка подключения к БД"""
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.close()
-    conn.close()
+    try:
+        # Проверяем подключение к БД
+        cur.execute("SELECT 1")
+        logger.info("Успешное подключение к базе данных")
+    except psycopg2.Error as e:
+        logger.error(f"Ошибка подключения к БД: {e}")
+        raise
+    finally:
+        cur.close()
+        conn.close()
 
 def register_user(user_id, user_name, phone="0000000000"):
     conn = get_db_connection()
