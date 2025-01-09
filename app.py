@@ -467,61 +467,71 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                 )
 
         elif action == "SELECT_SPECIALIST":
-            if not state or not state.get('service_id'):
-                update.message.reply_text("Сначала выберите услугу.")
-                return
+    if not state or not state.get('service_id'):
+        update.message.reply_text("Сначала выберите услугу.")
+        return
 
-            specialist_name = extracted_data.get('specialist')
-            specialists = get_specialists(state['service_id'])
-            
-            if specialist_name:
-                # Улучшенный поиск специалиста
-                specialist = next(
-                    (s for s in specialists if specialist_name.lower() in s[1].lower()),
-                    None
+    specialist_name = extracted_data.get('specialist') or user_text  # Берем имя из GPT или из текста пользователя
+    specialists = get_specialists(state['service_id'])
+    
+    if specialist_name:
+        # Ищем специалиста, игнорируя регистр и учитывая частичное совпадение имени
+        specialist = next(
+            (s for s in specialists if specialist_name.lower() in s[1].lower() or s[1].lower() in specialist_name.lower()),
+            None
+        )
+        
+        if specialist:
+            available_times = get_available_times(specialist[0], state['service_id'])
+            if available_times:
+                set_user_state(
+                    user_id, 
+                    "select_time",
+                    service_id=state['service_id'],
+                    specialist_id=specialist[0]
                 )
-                
-                if specialist:
-                    available_times = get_available_times(specialist[0], state['service_id'])
-                    if available_times:
-                        set_user_state(
-                            user_id, 
-                            "select_time",
-                            service_id=state['service_id'],
-                            specialist_id=specialist[0]
-                        )
-                        times_text = "\n".join([f"🕐 {t}" for t in available_times])
-                        update.message.reply_text(
-                            f"Вы выбрали специалиста: {specialist[1]}\n\n"
-                            f"Доступное время:\n{times_text}\n\n"
-                            "Пожалуйста, выберите удобное время."
-                        )
-                    else:
-                        # Поиск альтернативного специалиста
-                        alternative = find_available_specialist(state['service_id'], specialist[0])
-                        if alternative:
-                            alt_times = get_available_times(alternative[0], state['service_id'])
-                            update.message.reply_text(
-                                f"К сожалению, у специалиста {specialist[1]} нет свободного времени.\n"
-                                f"Но вы можете записаться к {alternative[1]}:\n\n" +
-                                "\n".join([f"🕐 {t}" for t in alt_times])
-                            )
-                        else:
-                            update.message.reply_text(
-                                "К сожалению, сейчас нет свободного времени у специалистов. "
-                                "Попробуйте позже или выберите другую услугу."
-                            )
-                else:
-                    specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
-                    update.message.reply_text(
-                        f"Специалист не найден. Выберите из списка:\n\n{specialists_text}"
-                    )
-            else:
-                specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
+                times_text = "\n".join([f"🕐 {t}" for t in available_times])
                 update.message.reply_text(
-                    f"{gpt_response_text}\n\n"
-                    f"Доступные специалисты:\n{specialists_text}"
+                    f"Вы выбрали специалиста: {specialist[1]}\n\n"
+                    f"Доступное время:\n{times_text}\n\n"
+                    "Пожалуйста, выберите удобное время."
                 )
+            else:
+                # Ищем другого специалиста с доступным временем
+                other_specialists = [s for s in specialists if s[0] != specialist[0]]
+                available_specialist = None
+                available_times = []
+                
+                for other_spec in other_specialists:
+                    times = get_available_times(other_spec[0], state['service_id'])
+                    if times:
+                        available_specialist = other_spec
+                        available_times = times
+                        break
+                
+                if available_specialist:
+                    update.message.reply_text(
+                        f"К сожалению, у специалиста {specialist[1]} нет свободного времени.\n"
+                        f"Но вы можете записаться к {available_specialist[1]}:\n\n" +
+                        "\n".join([f"🕐 {t}" for t in available_times[:5]]) +
+                        "\n\nХотите записаться к этому специалисту?"
+                    )
+                else:
+                    update.message.reply_text(
+                        "К сожалению, сейчас нет свободного времени у специалистов. "
+                        "Попробуйте позже или выберите другую услугу."
+                    )
+        else:
+            specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
+            update.message.reply_text(
+                f"Специалист не найден. Выберите из списка:\n\n{specialists_text}"
+            )
+    else:
+        specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
+        update.message.reply_text(
+            f"{gpt_response_text}\n\n"
+            f"Доступные специалисты:\n{specialists_text}"
+        )
 
         elif action == "SELECT_TIME":
             if not state or not all(k in state for k in ['service_id', 'specialist_id']):
