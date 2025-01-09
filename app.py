@@ -493,9 +493,9 @@ def handle_booking_with_gpt(update, user_id, user_text, state=None):
                 )
 
        elif action == "SELECT_TIME":
-    if not state or not all(k in state for k in ['service_id', 'specialist_id']):
-        update.message.reply_text("Сначала выберите услугу и специалиста.")
-        return
+            if not state or not all(k in state for k in ['service_id', 'specialist_id']):
+                update.message.reply_text("Сначала выберите услугу и специалиста.")
+                return
 
     chosen_time = extracted_data.get('time')
     available_times = get_available_times(state['specialist_id'], state['service_id'])
