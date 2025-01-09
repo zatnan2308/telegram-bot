@@ -1063,7 +1063,7 @@ def show_all_specialists(update):
     finally:
         cur.close()
         conn.close()
-```
+
 
 
 
