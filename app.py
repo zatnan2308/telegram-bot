@@ -994,6 +994,10 @@ def handle_time_selection(update, user_id, time_text, state):
         )
 
     if chosen_time:
+        service_name = get_service_name(state['service_id'])
+        specialist_name = get_specialist_name(state['specialist_id'])
+        
+        # Сразу переходим к подтверждению
         set_user_state(
             user_id,
             "confirm",
@@ -1001,8 +1005,7 @@ def handle_time_selection(update, user_id, time_text, state):
             specialist_id=state['specialist_id'],
             chosen_time=chosen_time
         )
-        service_name = get_service_name(state['service_id'])
-        specialist_name = get_specialist_name(state['specialist_id'])
+        
         update.message.reply_text(
             "Подтвердите запись:\n\n"
             f"🎯 Услуга: {service_name}\n"
@@ -1192,7 +1195,25 @@ def show_all_specialists(update):
 
 
 
-
+def handle_services_question(update):
+    """Показать список доступных услуг с ценами"""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT title, price FROM services ORDER BY title")
+        services = cur.fetchall()
+        if services:
+            services_text = "\n".join([f"💠 {service[0]} - {service[1]} руб." for service in services])
+            update.message.reply_text(
+                "Наши услуги:\n\n"
+                f"{services_text}\n\n"
+                "Чтобы записаться, просто напишите название нужной услуги."
+            )
+        else:
+            update.message.reply_text("К сожалению, список услуг временно недоступен.")
+    finally:
+        cur.close()
+        conn.close()
 
 
 
