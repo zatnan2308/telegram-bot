@@ -554,6 +554,50 @@ def start(update, context):
         "Привет! Я ваш бот для управления записями. Напишите 'Записаться', чтобы начать запись, или задайте мне любой вопрос!"
     )
 
+
+
+
+
+def cancel_booking(user_id, booking_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Получаем информацию о записи
+        cur.execute("""
+            SELECT service_id, specialist_id, date_time 
+            FROM bookings 
+            WHERE id = %s AND user_id = %s
+        """, (booking_id, user_id))
+        booking = cur.fetchone()
+        
+        if booking:
+            # Освобождаем слот
+            cur.execute("""
+                UPDATE booking_times 
+                SET is_booked = FALSE 
+                WHERE specialist_id = %s 
+                AND service_id = %s 
+                AND slot_time = %s
+            """, (booking[1], booking[0], booking[2]))
+            
+            # Удаляем запись
+            cur.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+            conn.commit()
+            return True
+        return False
+    except psycopg2.Error as e:
+        logger.error(f"Ошибка при отмене записи: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+
+
+
+
 # =============================================================================
 # Flask-маршруты и настройка диспетчера
 # =============================================================================
