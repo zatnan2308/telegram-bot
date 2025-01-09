@@ -872,7 +872,7 @@ def process_booking(update, user_id, user_text, state):
             return
 
         services = get_services()
-        service = next((s for s in services if s[1].lower() == user_text), None)
+        service = next((s for s in services if s[1].lower() == user_text.lower()), None)
         if service:
             set_user_state(user_id, "select_specialist", service_id=service[0])
             sp_list = get_specialists(service_id=service[0])
@@ -915,7 +915,7 @@ def process_booking(update, user_id, user_text, state):
 
     elif step == "select_specialist":
         specs = get_specialists(service_id=state['service_id'])
-        specialist = next((sp for sp in specs if sp[1].lower() == user_text), None)
+        specialist = next((sp for sp in specs if sp[1].lower() == user_text.lower()), None)
         if specialist:
             av_times = get_available_times(specialist[0], state['service_id'])
             if av_times:
@@ -955,27 +955,35 @@ def process_booking(update, user_id, user_text, state):
             else:
                 update.message.reply_text("Не нашли такого специалиста. Попробуйте снова.")
 
-    elif action == "SELECT_TIME":
+    elif step == "select_time":
         if not state or not all(k in state for k in ['service_id', 'specialist_id']):
             update.message.reply_text("Сначала выберите услугу и специалиста.")
             return
 
-    chosen_time = extracted_data.get('time')
-    available_times = get_available_times(state['specialist_id'], state['service_id'])
+        available_times = get_available_times(state['specialist_id'], state['service_id'])
+        chosen_time = parse_time_input(user_text, available_times)
 
-    if chosen_time and chosen_time in available_times:
-        set_user_state(user_id, "confirm", service_id=serv_id, specialist_id=spec_id, chosen_time=chosen_time)
-        srv_name = get_service_name(serv_id)
-        sp_name = get_specialist_name(spec_id)
-        update.message.reply_text(
-            f"Вы выбрали:\nУслуга: {srv_name}\nСпециалист: {sp_name}\nВремя: {chosen_time}\nПодтвердите запись (да/нет)."
-        )
-    else:
-        update.message.reply_text("Неправильное или занятое время. Попробуйте снова.")
-
+        if chosen_time and chosen_time in available_times:
+            set_user_state(
+                user_id,
+                "confirm",
+                service_id=state['service_id'],
+                specialist_id=state['specialist_id'],
+                chosen_time=chosen_time
+            )
+            srv_name = get_service_name(state['service_id'])
+            sp_name = get_specialist_name(state['specialist_id'])
+            update.message.reply_text(
+                f"Вы выбрали:\nУслуга: {srv_name}\nСпециалист: {sp_name}\nВремя: {chosen_time}\nПодтвердите запись (да/нет)."
+            )
+        else:
+            times_text = "\n".join([f"🕐 {t}" for t in available_times])
+            update.message.reply_text(
+                f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
+            )
 
     elif step == "confirm":
-        if user_text in ["да", "да.", "yes", "yes."]:
+        if user_text.lower() in ["да", "да.", "yes", "yes."]:
             success = create_booking(
                 user_id=user_id,
                 serv_id=state['service_id'],
@@ -987,11 +995,11 @@ def process_booking(update, user_id, user_text, state):
             else:
                 update.message.reply_text("Произошла ошибка при создании записи. Пожалуйста, попробуйте позже.")
             delete_user_state(user_id)
-        elif user_text in ["нет", "нет.", "no", "no."]:
+        elif user_text.lower() in ["нет", "нет.", "no", "no."]:
             update.message.reply_text("Запись отменена.")
             delete_user_state(user_id)
         else:
-            update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'.")
+            update.message.reply_text("Пожалуйста, ответьте 'да' или 'нет'."))
 
 
 
