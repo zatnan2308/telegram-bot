@@ -247,3 +247,88 @@ def delete_user_state(user_id: int) -> None:
     finally:
         cur.close()
         conn.close()
+
+def create_service(service_name: str, price: float) -> bool:
+    """Создаёт новую услугу (service_name, price) в таблице services."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Проверяем, нет ли уже такой услуги:
+        cur.execute("SELECT id FROM services WHERE LOWER(title) = LOWER(%s)", (service_name,))
+        row = cur.fetchone()
+        if row:
+            # уже есть
+            return False
+        
+        cur.execute("""
+            INSERT INTO services (title, price)
+            VALUES (%s, %s)
+        """, (service_name, price))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_service: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def create_specialist(specialist_name: str) -> bool:
+    """Создаёт нового специалиста (specialist_name) в таблице specialists."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Аналогично проверяем:
+        cur.execute("SELECT id FROM specialists WHERE LOWER(name) = LOWER(%s)", (specialist_name,))
+        row = cur.fetchone()
+        if row:
+            return False
+        
+        cur.execute("""
+            INSERT INTO specialists (name)
+            VALUES (%s)
+        """, (specialist_name,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_specialist: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
+    """Создаёт нового менеджера по chat_id (и необязательному username)."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Проверяем, нет ли уже такого chat_id
+        cur.execute("SELECT id FROM managers WHERE chat_id = %s", (chat_id,))
+        if cur.fetchone():
+            return False
+        
+        cur.execute("""
+            INSERT INTO managers (chat_id, username)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (chat_id, username))
+        manager_id = cur.fetchone()[0]
+
+        # Также добавим запись в notification_settings
+        cur.execute("""
+            INSERT INTO notification_settings (manager_id)
+            VALUES (%s)
+        """, (manager_id,))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_manager_in_db: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
