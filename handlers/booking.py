@@ -1,8 +1,9 @@
 import json
 from typing import Optional, Dict
 import telegram
+import openai
 
-from config.settings import TOKEN, DATABASE_URL, GPT_MODEL, MANAGER_CHAT_ID
+from config.settings import TOKEN, GPT_MODEL, MANAGER_CHAT_ID
 from database.queries import (
     get_services,
     find_service_by_name,
@@ -14,7 +15,6 @@ from database.queries import (
     find_available_specialist
 )
 from database.models import set_user_state, delete_user_state
-from services.gpt import get_gpt_response
 from utils.logger import logger
 from utils.time_utils import parse_time_input
 
