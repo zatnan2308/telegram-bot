@@ -8,6 +8,11 @@ from handlers.commands import start, help_command
 from handlers.messages import handle_message
 from handlers.manager import handle_manager_commands
 from utils.logger import logger
+from handlers.admin_commands import (
+    admin_command_add_service,
+    admin_command_add_specialist,
+    admin_command_add_manager
+)
 
 # Инициализация Flask и Telegram бота
 app = Flask(__name__)
@@ -22,6 +27,9 @@ dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("register_manager", handle_manager_commands))
 dispatcher.add_handler(CommandHandler("stop_notifications", handle_manager_commands))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+dispatcher.add_handler(CommandHandler("add_service", admin_command_add_service))
+dispatcher.add_handler(CommandHandler("add_specialist", admin_command_add_specialist))
+dispatcher.add_handler(CommandHandler("add_manager", admin_command_add_manager))
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
