@@ -463,3 +463,48 @@ def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
         cur.close()
         conn.close()
 
+def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
+    """
+    Отменяет запись с указанным booking_id. Возвращает кортеж (успех, сообщение).
+    Если запись успешно отменена, (True, "Запись ... успешно отменена").
+    Если произошла ошибка или запись не найдена, (False, "текст ошибки").
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Сначала проверяем, существует ли запись
+        cur.execute("""
+            SELECT specialist_id, service_id, date_time 
+            FROM bookings
+            WHERE id = %s
+        """, (booking_id,))
+        row = cur.fetchone()
+        if not row:
+            return (False, f"Запись с ID {booking_id} не найдена")
+
+        specialist_id, service_id, date_time = row
+
+        # Освобождаем слот
+        cur.execute("""
+            UPDATE booking_times
+            SET is_booked = FALSE
+            WHERE specialist_id = %s
+              AND service_id = %s
+              AND slot_time = %s
+        """, (specialist_id, service_id, date_time))
+
+        # Удаляем саму запись
+        cur.execute("""
+            DELETE FROM bookings
+            WHERE id = %s
+        """, (booking_id,))
+
+        conn.commit()
+        return (True, f"Запись с ID {booking_id} успешно отменена.")
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Ошибка при отмене записи {booking_id}: {e}")
+        return (False, f"Произошла ошибка при отмене записи: {e}")
+    finally:
+        cur.close()
+        conn.close()
