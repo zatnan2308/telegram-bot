@@ -10,7 +10,7 @@ from config.settings import TOKEN, APP_URL
 from database.connection import init_db
 
 # Обычные команды
-from handlers.commands import start, help_command
+from handlers.commands import start, help_command, spec_list_command, service_list_command
 
 # Основной обработчик сообщений
 from handlers.messages import handle_message
@@ -51,6 +51,8 @@ def setup_commands(bot_instance):
     commands = [
         BotCommand("start", "Начать работу"),
         BotCommand("help", "Получить справку"),
+        BotCommand("service_list", "Показать список услуг"),
+        BotCommand("spec_list", "Показать список специалистов"),
         BotCommand("add_service", "Добавить услугу"),
         BotCommand("add_specialist", "Добавить специалиста"),
         BotCommand("add_manager", "Добавить менеджера"),
