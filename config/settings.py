@@ -10,7 +10,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 APP_URL = os.getenv("APP_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")
-
+ADMIN_ID = 561102768
 # Проверка наличия всех необходимых переменных окружения
 REQUIRED_ENV_VARS = {
     "TOKEN": TOKEN,
