@@ -5,8 +5,11 @@ import psycopg2
 from database.connection import get_db_connection
 from utils.logger import logger
 
+
 def get_user_state(user_id: int) -> Optional[Dict]:
-    """Получение состояния пользователя"""
+    """
+    Получение состояния пользователя (этап диалога), хранящегося в таблице user_state.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -28,8 +31,11 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         cur.close()
         conn.close()
 
+
 def get_user_bookings(user_id: int) -> List[Dict]:
-    """Получение всех активных записей пользователя"""
+    """
+    Получение всех активных (будущих) записей пользователя из таблицы bookings.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -56,8 +62,11 @@ def get_user_bookings(user_id: int) -> List[Dict]:
         cur.close()
         conn.close()
 
+
 def get_services() -> List[Tuple[int, str]]:
-    """Возвращает список (id, title) услуг"""
+    """
+    Возвращает список (id, title) всех услуг из таблицы services.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -67,12 +76,16 @@ def get_services() -> List[Tuple[int, str]]:
         cur.close()
         conn.close()
 
+
 def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
-    """Поиск услуги по названию"""
+    """
+    Поиск услуги по названию (точное или частичное совпадение) среди services.
+    Возвращает кортеж (id, title) или None, если не найдено.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Точное совпадение
+        # Сначала ищем точное совпадение
         cur.execute(
             "SELECT id, title FROM services WHERE LOWER(title) = LOWER(%s)",
             (user_text,)
@@ -81,19 +94,25 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
         if service:
             return service
 
-        # Частичное совпадение
+        # Если точного совпадения нет, ищем частичное
         cur.execute(
             "SELECT id, title FROM services WHERE LOWER(title) LIKE LOWER(%s)",
             (f"%{user_text}%",)
         )
         matches = cur.fetchall()
-        return matches[0] if matches else None
+        if matches:
+            return matches[0]  # Возвращаем первую найденную
+        return None
     finally:
         cur.close()
         conn.close()
 
+
 def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
-    """Возвращает список (id, name) специалистов"""
+    """
+    Возвращает список (id, name) специалистов.
+    Если service_id передан, то только тех, кто привязан к этой услуге.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -112,8 +131,12 @@ def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
         cur.close()
         conn.close()
 
+
 def get_available_times(spec_id: int, serv_id: int) -> List[str]:
-    """Возвращает список свободных временных слотов"""
+    """
+    Возвращает список свободных слотов (YYYY-MM-DD HH:MM) для пары (spec_id, serv_id)
+    из таблицы booking_times, где is_booked=FALSE.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -131,8 +154,12 @@ def get_available_times(spec_id: int, serv_id: int) -> List[str]:
         cur.close()
         conn.close()
 
+
 def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> bool:
-    """Создает новую запись"""
+    """
+    Создаёт новую запись (booking) для user_id, serv_id, spec_id на date_str.
+    Помечает слот is_booked = TRUE в booking_times.
+    """
     try:
         chosen_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M")
     except ValueError:
@@ -142,7 +169,7 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Обновляем статус временного слота
+        # Помечаем слот как занятый
         cur.execute("""
             UPDATE booking_times
             SET is_booked = TRUE
@@ -151,7 +178,7 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
               AND slot_time = %s
         """, (spec_id, serv_id, chosen_dt))
 
-        # Создаем запись
+        # Добавляем в bookings
         cur.execute("""
             INSERT INTO bookings (user_id, service_id, specialist_id, date_time)
             VALUES (%s, %s, %s, %s)
@@ -167,8 +194,11 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
         cur.close()
         conn.close()
 
+
 def get_service_name(service_id: int) -> Optional[str]:
-    """Получает название услуги по id"""
+    """
+    По id услуги возвращает её название (title) или None, если нет.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -179,8 +209,11 @@ def get_service_name(service_id: int) -> Optional[str]:
         cur.close()
         conn.close()
 
+
 def get_specialist_name(specialist_id: int) -> Optional[str]:
-    """Получает имя специалиста по id"""
+    """
+    По id специалиста возвращает его имя (name) или None, если нет.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -191,8 +224,12 @@ def get_specialist_name(specialist_id: int) -> Optional[str]:
         cur.close()
         conn.close()
 
+
 def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Optional[Tuple[int, str]]:
-    """Находит другого доступного специалиста"""
+    """
+    Находит *другого* специалиста (id, name), у которого есть свободное время,
+    исключая exclude_specialist_id.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -212,6 +249,7 @@ def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Op
         cur.close()
         conn.close()
 
+
 def set_user_state(
     user_id: int,
     step: str,
@@ -219,7 +257,9 @@ def set_user_state(
     specialist_id: Optional[int] = None,
     chosen_time: Optional[str] = None
 ) -> None:
-    """Установка состояния пользователя"""
+    """
+    Сохраняет (или обновляет) состояние пользователя в таблице user_state.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -237,8 +277,11 @@ def set_user_state(
         cur.close()
         conn.close()
 
+
 def delete_user_state(user_id: int) -> None:
-    """Удаление состояния пользователя"""
+    """
+    Удаляет состояние пользователя из таблицы user_state.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -248,16 +291,20 @@ def delete_user_state(user_id: int) -> None:
         cur.close()
         conn.close()
 
+
 def create_service(service_name: str, price: float) -> bool:
-    """Создаёт новую услугу (service_name, price) в таблице services."""
+    """
+    Создаёт новую услугу в таблице services (title, price).
+    Если такая услуга уже существует, возвращает False.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Проверяем, нет ли уже такой услуги:
+        # Проверим, нет ли дубликата
         cur.execute("SELECT id FROM services WHERE LOWER(title) = LOWER(%s)", (service_name,))
         row = cur.fetchone()
         if row:
-            # уже есть
+            # Уже есть такая услуга
             return False
         
         cur.execute("""
@@ -274,21 +321,21 @@ def create_service(service_name: str, price: float) -> bool:
         cur.close()
         conn.close()
 
+
 def create_specialist(specialist_name: str) -> bool:
-    """Создаёт нового специалиста (specialist_name) в таблице specialists."""
+    """
+    Создаёт нового специалиста (name) в таблице specialists.
+    Если уже есть с таким же именем (case-insensitive), возвращает False.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Аналогично проверяем:
         cur.execute("SELECT id FROM specialists WHERE LOWER(name) = LOWER(%s)", (specialist_name,))
         row = cur.fetchone()
         if row:
             return False
         
-        cur.execute("""
-            INSERT INTO specialists (name)
-            VALUES (%s)
-        """, (specialist_name,))
+        cur.execute("INSERT INTO specialists (name) VALUES (%s)", (specialist_name,))
         conn.commit()
         return True
     except Exception as e:
@@ -299,12 +346,15 @@ def create_specialist(specialist_name: str) -> bool:
         cur.close()
         conn.close()
 
+
 def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
-    """Создаёт нового менеджера по chat_id (и необязательному username)."""
+    """
+    Создаёт нового менеджера по chat_id (и необязательному username) в таблице managers.
+    Параллельно добавляет запись в notification_settings.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Проверяем, нет ли уже такого chat_id
         cur.execute("SELECT id FROM managers WHERE chat_id = %s", (chat_id,))
         if cur.fetchone():
             return False
@@ -316,7 +366,7 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
         """, (chat_id, username))
         manager_id = cur.fetchone()[0]
 
-        # Также добавим запись в notification_settings
+        # Запись в notification_settings
         cur.execute("""
             INSERT INTO notification_settings (manager_id)
             VALUES (%s)
@@ -333,41 +383,25 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
         conn.close()
 
 
-        """, (spec_id, serv_id, date_time))
-
-        # Удаляем саму запись
-        cur.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
-        
-        conn.commit()
-        return (True, f"Запись с ID {booking_id} успешно отменена.")
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Ошибка при отмене записи {booking_id}: {e}")
-        return (False, "Произошла ошибка при отмене записи.")
-    finally:
-        cur.close()
-        conn.close()
-
-
 def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     """
-    Добавляет услугу (service_id) к специалисту (specialist_id) в таблицу 
-    specialist_services. Если уже есть - игнорируем, 
-    иначе создаём запись.
+    Добавляет услугу (service_id) к специалисту (specialist_id) в таблицу specialist_services.
+    Если уже есть — сообщает об этом, иначе создаёт новую связку.
     """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Проверяем, есть ли уже такая связка
+        # Проверяем, есть ли уже такая связка:
         cur.execute("""
-            SELECT 1 
+            SELECT 1
             FROM specialist_services
             WHERE specialist_id = %s AND service_id = %s
         """, (spec_id, serv_id))
         row = cur.fetchone()
         if row:
             return f"У специалиста (id={spec_id}) уже есть услуга (id={serv_id})."
-
+        
+        # Если нет — добавляем
         cur.execute("""
             INSERT INTO specialist_services (specialist_id, service_id)
             VALUES (%s, %s)
@@ -381,4 +415,3 @@ def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     finally:
         cur.close()
         conn.close()
-
