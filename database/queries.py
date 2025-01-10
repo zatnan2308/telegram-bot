@@ -415,3 +415,51 @@ def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     finally:
         cur.close()
         conn.close()
+
+def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
+    """
+    Возвращает список активных (будущих) записей для конкретного специалиста (по specialist_id).
+    Например, формат возвращаемых объектов:
+    [
+      {
+        "id": 10,
+        "date_time": "2025-01-15 14:00",
+        "service_name": "Чистка лица",
+        "user_name": "Олег",
+      },
+      ...
+    ]
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT 
+                b.id,
+                b.date_time,
+                s.title as service_name,
+                u.name as user_name
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            JOIN users u ON b.user_id = u.id
+            WHERE b.specialist_id = %s
+              AND b.date_time > NOW()
+            ORDER BY b.date_time
+        """, (specialist_id,))
+        
+        rows = cur.fetchall()
+        # Для удобства создаём словари
+        result = []
+        for row in rows:
+            result.append({
+                "id": row[0],
+                "date_time": row[1].strftime("%Y-%m-%d %H:%M"),
+                "service_name": row[2],
+                "user_name": row[3],
+            })
+        return result
+
+    finally:
+        cur.close()
+        conn.close()
+
