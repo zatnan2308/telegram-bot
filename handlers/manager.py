@@ -1,8 +1,9 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import telegram
 from telegram.ext import CallbackContext
 
 from config.settings import MANAGER_CHAT_ID
+from database.connection import get_db_connection
 from database.queries import get_user_bookings
 from utils.logger import logger
 
