@@ -4,6 +4,8 @@
 from typing import Optional
 from telegram import Update
 from telegram.ext import CallbackContext
+from database.queries import get_bookings_for_specialist
+
 
 from database.queries import (
     get_specialist_name,
