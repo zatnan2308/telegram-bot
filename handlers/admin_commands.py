@@ -97,3 +97,21 @@ def admin_command_add_manager(update: Update, context: CallbackContext) -> None:
         )
     else:
         update.message.reply_text("Ошибка при создании менеджера (возможно уже есть).")
+
+def admin_command_set_service_duration(update: Update, context: CallbackContext) -> None:
+    """Админ: установить длительность услуги в минутах."""
+    # Проверяем права, опускаем детали
+    args = context.args
+    if len(args) < 2:
+        update.message.reply_text("Использование: /set_service_duration <id_услуги> <минуты>")
+        return
+    
+    service_id = int(args[0])
+    duration = int(args[1])
+
+    success = set_service_duration(service_id, duration)
+    if success:
+        update.message.reply_text(f"Длительность услуги (ID={service_id}) установлена на {duration} мин.")
+    else:
+        update.message.reply_text("Ошибка установки длительности.")
+
