@@ -1,9 +1,8 @@
 import json
 from typing import Optional, Dict
 import telegram
-import openai
 
-from config.settings import TOKEN, GPT_MODEL, MANAGER_CHAT_ID
+from config.settings import TOKEN, MANAGER_CHAT_ID
 from database.queries import (
     get_services,
     find_service_by_name,
@@ -12,11 +11,24 @@ from database.queries import (
     create_booking,
     get_service_name,
     get_specialist_name,
-    find_available_specialist
+    find_available_specialist,
+    set_user_state,
+    delete_user_state
 )
+
+from services.gpt import get_gpt_response  # Добавляем этот импорт
 from database.models import set_user_state, delete_user_state
 from utils.logger import logger
 from utils.time_utils import parse_time_input
+
+def handle_booking_with_gpt(update: telegram.Update, user_id: int, user_text: str, state: Optional[Dict] = None):
+    """Обработка бронирования с использованием GPT"""
+    try:
+        result = get_gpt_response(user_id, user_text, state)
+        
+        action = result.get('action')
+        extracted_data = result.get('extracted_data', {})
+        gpt_response_text = result.get('response', '')
 
 def handle_list_services(update: telegram.Update, gpt_response_text: str):
     """Обработка action LIST_SERVICES"""
