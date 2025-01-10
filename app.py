@@ -62,6 +62,7 @@ def setup_commands(bot_instance):
         BotCommand("spec_appointments", "Показать записи специалиста"),
         BotCommand("spec_cancel_booking", "Отменить запись (по ID)"),
         BotCommand("spec_add_service", "Добавить услугу к специалисту"),
+        BotCommand("set_service_duration", "Установить длительность (мин) для услуги"),
     ]
     bot_instance.set_my_commands(commands)
 
