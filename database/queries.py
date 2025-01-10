@@ -63,20 +63,29 @@ def get_user_bookings(user_id: int) -> List[Dict]:
         conn.close()
 
 
+# Внутри database/queries.py
+
 def get_services() -> List[Tuple[int, str]]:
     """
     Возвращает список (id, title) всех услуг из таблицы services.
     """
-    conn = get_db_connection()
-    cur = conn.cursor()
+    conn = None
+    cur = None
     try:
+        conn = get_db_connection()
+        cur = conn.cursor()
         cur.execute("SELECT id, title FROM services ORDER BY id;")
         return cur.fetchall()
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка услуг: {e}")
+        return []
     finally:
-        cur.close()
-        conn.close()
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
-
+# Другие функции, связанные с услугами
 def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     """
     Поиск услуги по названию (точное или частичное совпадение) среди services.
@@ -106,7 +115,6 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     finally:
         cur.close()
         conn.close()
-
 
 def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
     """
