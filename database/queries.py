@@ -352,7 +352,7 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
 def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     """
     Добавляет услугу (service_id) к специалисту (specialist_id) в таблицу 
-    specialist_services. Если уже есть — игнорируем, 
+    specialist_services. Если уже есть - игнорируем, 
     иначе создаём запись.
     """
     conn = get_db_connection()
