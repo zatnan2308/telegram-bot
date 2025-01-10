@@ -508,3 +508,25 @@ def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
     finally:
         cur.close()
         conn.close()
+
+def set_service_duration(service_id: int, duration: int) -> bool:
+    """Установить поле duration_minutes для указанной услуги."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE services
+            SET duration_minutes = %s
+            WHERE id = %s
+        """, (duration, service_id))
+        if cur.rowcount == 0:
+            return False  # не нашли услугу
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в set_service_duration: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
