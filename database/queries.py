@@ -530,3 +530,108 @@ def set_service_duration(service_id: int, duration: int) -> bool:
     finally:
         cur.close()
         conn.close()
+        
+
+def get_service_duration(service_id: int) -> int:
+    """
+    Возвращает длительность услуги (в минутах) из таблицы services.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT duration_minutes FROM services WHERE id = %s", (service_id,))
+        row = cur.fetchone()
+        if row:
+            return row[0]  # duration_minutes
+        return 0
+    finally:
+        cur.close()
+        conn.close()
+# Внутри database/queries.py
+
+def get_specialist_work_hours(specialist_id: int) -> tuple:
+    """
+    Возвращает (work_start_time, work_end_time) для специалиста,
+    например (datetime.time(10,0), datetime.time(20,0)).
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT work_start_time, work_end_time
+            FROM specialists
+            WHERE id = %s
+        """, (specialist_id,))
+        row = cur.fetchone()
+        if row:
+            return (row[0], row[1])  # time, time
+        return (None, None)
+    finally:
+        cur.close()
+        conn.close()
+
+# Внутри database/queries.py
+
+def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.date) -> list:
+    """
+    Возвращает список бронирований вида:
+    [
+      { 'start': datetime.datetime, 'duration': int },
+      ...
+    ]
+    на заданную дату (date_obj).
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT b.date_time, s.duration_minutes
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            WHERE b.specialist_id = %s
+              AND DATE(b.date_time) = %s
+            ORDER BY b.date_time
+        """, (specialist_id, date_obj))
+
+        rows = cur.fetchall()
+        bookings = []
+        for row in rows:
+            start_dt = row[0]  # datetime
+            duration = row[1]  # int (duration_minutes)
+            bookings.append({
+                'start': start_dt,
+                'duration': duration
+            })
+        return bookings
+    finally:
+        cur.close()
+        conn.close()
+
+# Внутри database/queries.py
+
+def set_service_duration(service_id: int, duration: int) -> bool:
+    """
+    Устанавливает duration_minutes = duration для указанной услуги.
+    Возвращает True/False в зависимости от успеха.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE services
+            SET duration_minutes = %s
+            WHERE id = %s
+        """, (duration, service_id))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return False  # не нашлось такой услуги
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка set_service_duration: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
