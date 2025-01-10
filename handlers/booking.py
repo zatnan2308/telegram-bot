@@ -1,13 +1,19 @@
-from typing import Dict, Optional, Tuple
+import json
+from typing import Optional, Dict
 import telegram
 
-from config.settings import MANAGER_CHAT_ID
+from config.settings import TOKEN, DATABASE_URL, GPT_MODEL, MANAGER_CHAT_ID
 from database.queries import (
-    get_services, find_service_by_name, get_specialists,
-    get_available_times, create_booking, delete_user_state,
-    get_service_name, get_specialist_name, set_user_state,
+    get_services,
+    find_service_by_name,
+    get_specialists,
+    get_available_times,
+    create_booking,
+    get_service_name,
+    get_specialist_name,
     find_available_specialist
 )
+from database.models import set_user_state, delete_user_state
 from services.gpt import get_gpt_response
 from utils.logger import logger
 from utils.time_utils import parse_time_input
