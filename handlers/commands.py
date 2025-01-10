@@ -17,3 +17,29 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "Чтобы записаться, просто напишите 'Записаться' или название услуги.\n"
         "Для отмены записи напишите 'Отменить запись'."
     )
+    
+def spec_list_command(update, context):
+    """
+    Показывает список всех специалистов.
+    """
+    # ... код, который достаёт список специалистов
+    # например:
+    specialists = get_specialists()
+    text = "Список специалистов:\n"
+    for sp_id, sp_name in specialists:
+        text += f"- [{sp_id}] {sp_name}\n"
+    
+    update.message.reply_text(text)
+
+def service_list_command(update, context):
+    """
+    Показывает список всех услуг.
+    """
+    # ... код, который достаёт список услуг
+    # например:
+    services = get_services()
+    text = "Список услуг:\n"
+    for serv_id, serv_title in services:
+        text += f"- [{serv_id}] {serv_title}\n"
+    
+    update.message.reply_text(text)
