@@ -39,6 +39,8 @@ from utils.logger import logger
 # Импортируем BotCommand для настройки списка команд
 from telegram import BotCommand
 
+from handlers.admin_commands import admin_command_set_service_duration
+
 # Инициализируем Flask-приложение и бота
 app = Flask(__name__)
 bot = telegram.Bot(token=TOKEN)
