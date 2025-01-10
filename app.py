@@ -18,13 +18,14 @@ from handlers.messages import handle_message
 # Обработка команд менеджера (пример: /register_manager, /stop_notifications)
 from handlers.manager import handle_manager_commands
 
-# Админские команды:
+# Админские команды
 from handlers.admin_commands import (
     admin_command_add_service,
     admin_command_add_specialist,
     admin_command_add_manager
 )
 
+# Команды для специалиста
 from handlers.specialist_commands import (
     specialist_command_free_time,
     specialist_command_appointments,
@@ -32,26 +33,21 @@ from handlers.specialist_commands import (
     specialist_command_add_service
 )
 
-dispatcher.add_handler(CommandHandler("spec_free_time", specialist_command_free_time))
-dispatcher.add_handler(CommandHandler("spec_appointments", specialist_command_appointments))
-dispatcher.add_handler(CommandHandler("spec_cancel_booking", specialist_command_cancel_booking))
-dispatcher.add_handler(CommandHandler("spec_add_service", specialist_command_add_service))
-
 # Логгер
 from utils.logger import logger
 
 # Импортируем BotCommand для настройки списка команд
 from telegram import BotCommand
 
+# Инициализируем Flask-приложение и бота
 app = Flask(__name__)
 bot = telegram.Bot(token=TOKEN)
 
-# -----------------------------------------------------------------------------
-# Функция для установки списка команд, чтобы при вводе / в Телеграме
-# пользователю отображались подсказки.
-# -----------------------------------------------------------------------------
-
-def setup_commands(bot):
+def setup_commands(bot_instance):
+    """
+    Устанавливаем список /-команд, чтобы при вводе / 
+    в Телеграм-клиенте показывались подсказки.
+    """
     commands = [
         BotCommand("start", "Начать работу"),
         BotCommand("help", "Получить справку"),
@@ -61,14 +57,12 @@ def setup_commands(bot):
         BotCommand("spec_free_time", "Показать свободное время специалиста"),
         BotCommand("spec_appointments", "Показать записи специалиста"),
         BotCommand("spec_cancel_booking", "Отменить запись (по ID)"),
-        BotCommand("spec_add_service", "Добавить услугу к специалисту")
+        BotCommand("spec_add_service", "Добавить услугу к специалисту"),
     ]
-    bot.set_my_commands(commands)
-
+    bot_instance.set_my_commands(commands)
 
 # -----------------------------------------------------------------------------
-# Создаём Dispatcher и регистрируем все обработчики.
-# Обратите внимание, что порядок регистрации тоже может иметь значение.
+# Создаём Dispatcher (для регистрации обработчиков).
 # -----------------------------------------------------------------------------
 dispatcher = Dispatcher(bot, None, workers=4)
 
@@ -85,11 +79,17 @@ dispatcher.add_handler(CommandHandler("add_service", admin_command_add_service))
 dispatcher.add_handler(CommandHandler("add_specialist", admin_command_add_specialist))
 dispatcher.add_handler(CommandHandler("add_manager", admin_command_add_manager))
 
+# Команды для специалиста
+dispatcher.add_handler(CommandHandler("spec_free_time", specialist_command_free_time))
+dispatcher.add_handler(CommandHandler("spec_appointments", specialist_command_appointments))
+dispatcher.add_handler(CommandHandler("spec_cancel_booking", specialist_command_cancel_booking))
+dispatcher.add_handler(CommandHandler("spec_add_service", specialist_command_add_service))
+
 # Основной обработчик всех остальных текстовых сообщений
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
 # -----------------------------------------------------------------------------
-# Функции Flask для вебхука
+# Flask-маршруты для вебхука Telegram
 # -----------------------------------------------------------------------------
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
