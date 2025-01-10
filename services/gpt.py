@@ -2,9 +2,11 @@ import json
 import openai
 from typing import Dict, Optional
 
-from config.settings import OPENAI_API_KEY
+from config.settings import OPENAI_API_KEY, GPT_MODEL
 from utils.logger import logger
+from database.queries import get_service_name, get_specialist_name
 
+# Устанавливаем API ключ
 openai.api_key = OPENAI_API_KEY
 
 def get_booking_system_prompt() -> str:
@@ -34,8 +36,6 @@ def get_booking_system_prompt() -> str:
 
 def get_booking_context(state: Optional[Dict]) -> str:
     """Формирует контекст для GPT на основе текущего состояния"""
-    from database.queries import get_service_name, get_specialist_name
-    
     context = ""
     if state:
         context = f"Текущий этап бронирования: {state['step']}\n"
@@ -49,14 +49,14 @@ def get_booking_context(state: Optional[Dict]) -> str:
             context += f"Выбранное время: {state['chosen_time']}\n"
     return context
 
-def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
-    """Получает ответ от GPT"""
+def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
+    """Определяет намерение пользователя с помощью GPT"""
     try:
         system_prompt = get_booking_system_prompt()
         context = get_booking_context(state)
         
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=GPT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Контекст:\n{context}\nСообщение пользователя: {user_text}"}
@@ -70,10 +70,22 @@ def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None)
         logger.info(f"GPT response for user {user_id}: {gpt_response}")
         
         return json.loads(gpt_response)
-    
+
     except json.JSONDecodeError as e:
         logger.error(f"Ошибка парсинга JSON от GPT для user {user_id}: {e}")
-        raise
+        return {
+            "action": None,
+            "response": "Извините, произошла ошибка. Попробуйте еще раз.",
+            "extracted_data": {}
+        }
     except Exception as e:
         logger.error(f"Ошибка при обработке GPT для user {user_id}: {e}", exc_info=True)
-        raise
+        return {
+            "action": None,
+            "response": "Извините, произошла ошибка. Попробуйте еще раз или начните сначала.",
+            "extracted_data": {}
+        }
+
+def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
+    """Получает ответ от GPT"""
+    return determine_intent(user_id, user_text, state)
