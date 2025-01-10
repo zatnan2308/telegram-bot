@@ -18,6 +18,20 @@ from database.queries import (
 from services.gpt import get_gpt_response
 from utils.logger import logger
 from utils.time_utils import parse_time_input
+# pseudo-код где-нибудь в handlers/booking.py
+from services.scheduler import get_available_start_times
+
+def show_free_slots(update, context):
+    # specialist_id = ... (из state или из context.args)
+    # service_id = ...
+    # date_obj = ...  (нужно превратить из строки '2025-05-10' в datetime.date(2025,5,10))
+    
+    slots = get_available_start_times(specialist_id, date_obj, service_id)
+    if not slots:
+        update.message.reply_text("К сожалению, нет свободных слотов в этот день.")
+    else:
+        update.message.reply_text("Свободные интервалы:\n" + "\n".join(slots))
+
 
 def handle_list_services(update: telegram.Update, gpt_response_text: str):
     """Обработка action LIST_SERVICES"""
