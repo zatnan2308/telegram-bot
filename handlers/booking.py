@@ -15,20 +15,9 @@ from database.queries import (
     set_user_state,
     delete_user_state
 )
-
-from services.gpt import get_gpt_response  # Добавляем этот импорт
-from database.models import set_user_state, delete_user_state
+from services.gpt import get_gpt_response
 from utils.logger import logger
 from utils.time_utils import parse_time_input
-
-def handle_booking_with_gpt(update: telegram.Update, user_id: int, user_text: str, state: Optional[Dict] = None):
-    """Обработка бронирования с использованием GPT"""
-    try:
-        result = get_gpt_response(user_id, user_text, state)
-        
-        action = result.get('action')
-        extracted_data = result.get('extracted_data', {})
-        gpt_response_text = result.get('response', '')
 
 def handle_list_services(update: telegram.Update, gpt_response_text: str):
     """Обработка action LIST_SERVICES"""
@@ -39,12 +28,7 @@ def handle_list_services(update: telegram.Update, gpt_response_text: str):
     else:
         update.message.reply_text("К сожалению, сейчас нет доступных услуг.")
 
-def handle_select_service(
-    update: telegram.Update,
-    user_id: int,
-    extracted_data: Dict,
-    gpt_response_text: str
-):
+def handle_select_service(update: telegram.Update, user_id: int, extracted_data: Dict, gpt_response_text: str):
     """Обработка action SELECT_SERVICE"""
     service_name = extracted_data.get('service')
     if not service_name:
@@ -89,13 +73,7 @@ def handle_select_service(
     else:
         update.message.reply_text("К сожалению, нет доступного времени у специалистов.")
 
-def handle_select_specialist(
-    update: telegram.Update,
-    user_id: int,
-    state: Dict,
-    extracted_data: Dict,
-    gpt_response_text: str
-):
+def handle_select_specialist(update: telegram.Update, user_id: int, state: Dict, extracted_data: Dict, gpt_response_text: str):
     """Обработка action SELECT_SPECIALIST"""
     if not state or not state.get('service_id'):
         update.message.reply_text("Сначала выберите услугу.")
@@ -142,13 +120,7 @@ def handle_select_specialist(
             f"К сожалению, у специалиста {specialist[1]} нет свободного времени."
         )
 
-def handle_select_time(
-    update: telegram.Update,
-    user_id: int,
-    state: Dict,
-    extracted_data: Dict,
-    bot: telegram.Bot
-):
+def handle_select_time(update: telegram.Update, user_id: int, state: Dict, extracted_data: Dict, bot: telegram.Bot):
     """Обработка action SELECT_TIME"""
     if not state or not all(k in state for k in ['service_id', 'specialist_id']):
         services = get_services()
@@ -209,14 +181,7 @@ def handle_select_time(
             f"Пожалуйста, выберите точное время из списка:\n\n{times_text}"
         )
 
-def handle_confirm_booking(
-    update: telegram.Update,
-    user_id: int,
-    state: Dict,
-    user_text: str,
-    gpt_response_text: str,
-    bot: telegram.Bot
-):
+def handle_confirm_booking(update: telegram.Update, user_id: int, state: Dict, user_text: str, gpt_response_text: str, bot: telegram.Bot):
     """Обработка action CONFIRM_BOOKING"""
     if not state or not all(k in state for k in ['service_id', 'specialist_id', 'chosen_time']):
         update.message.reply_text("Недостаточно информации для создания записи.")
