@@ -332,3 +332,53 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
         cur.close()
         conn.close()
 
+
+        """, (spec_id, serv_id, date_time))
+
+        # Удаляем саму запись
+        cur.execute("DELETE FROM bookings WHERE id = %s", (booking_id,))
+        
+        conn.commit()
+        return (True, f"Запись с ID {booking_id} успешно отменена.")
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Ошибка при отмене записи {booking_id}: {e}")
+        return (False, "Произошла ошибка при отмене записи.")
+    finally:
+        cur.close()
+        conn.close()
+
+
+def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
+    """
+    Добавляет услугу (service_id) к специалисту (specialist_id) в таблицу 
+    specialist_services. Если уже есть — игнорируем, 
+    иначе создаём запись.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Проверяем, есть ли уже такая связка
+        cur.execute("""
+            SELECT 1 
+            FROM specialist_services
+            WHERE specialist_id = %s AND service_id = %s
+        """, (spec_id, serv_id))
+        row = cur.fetchone()
+        if row:
+            return f"У специалиста (id={spec_id}) уже есть услуга (id={serv_id})."
+
+        cur.execute("""
+            INSERT INTO specialist_services (specialist_id, service_id)
+            VALUES (%s, %s)
+        """, (spec_id, serv_id))
+        conn.commit()
+        return f"Услуга (id={serv_id}) добавлена к специалисту (id={spec_id})!"
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Ошибка при добавлении услуги {serv_id} к специалисту {spec_id}: {e}")
+        return f"Ошибка: {e}"
+    finally:
+        cur.close()
+        conn.close()
+
