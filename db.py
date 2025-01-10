@@ -52,3 +52,23 @@ def init_db_docstring_expanded():
     finally:
         cur.close()
         conn.close()
+
+def register_user(user_id, user_name, phone="0000000000"):
+    """
+    Регистрирует пользователя в таблице users, игнорируя конфликт по user_id.
+    :param user_id: int - ID пользователя (chat_id в Telegram)
+    :param user_name: str - Имя пользователя (берём из Telegram)
+    :param phone: str - Номер телефона, по умолчанию '0000000000'
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    query = """
+    INSERT INTO users (id, name, phone)
+    VALUES (%s, %s, %s)
+    ON CONFLICT (id) DO NOTHING;
+    """
+    cur.execute(query, (user_id, user_name, phone))
+    conn.commit()
+    cur.close()
+    conn.close()
+
