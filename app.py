@@ -25,6 +25,18 @@ from handlers.admin_commands import (
     admin_command_add_manager
 )
 
+from handlers.specialist_commands import (
+    specialist_command_free_time,
+    specialist_command_appointments,
+    specialist_command_cancel_booking,
+    specialist_command_add_service
+)
+
+dispatcher.add_handler(CommandHandler("spec_free_time", specialist_command_free_time))
+dispatcher.add_handler(CommandHandler("spec_appointments", specialist_command_appointments))
+dispatcher.add_handler(CommandHandler("spec_cancel_booking", specialist_command_cancel_booking))
+dispatcher.add_handler(CommandHandler("spec_add_service", specialist_command_add_service))
+
 # Логгер
 from utils.logger import logger
 
@@ -38,20 +50,21 @@ bot = telegram.Bot(token=TOKEN)
 # Функция для установки списка команд, чтобы при вводе / в Телеграме
 # пользователю отображались подсказки.
 # -----------------------------------------------------------------------------
+
 def setup_commands(bot):
-    """
-    Устанавливает список команд бота, 
-    которые будут отображаться при вводе '/' в Telegram.
-    """
     commands = [
         BotCommand("start", "Начать работу"),
         BotCommand("help", "Получить справку"),
         BotCommand("add_service", "Добавить услугу"),
         BotCommand("add_specialist", "Добавить специалиста"),
         BotCommand("add_manager", "Добавить менеджера"),
-        # Можно добавлять другие команды по вашему желанию
+        BotCommand("spec_free_time", "Показать свободное время специалиста"),
+        BotCommand("spec_appointments", "Показать записи специалиста"),
+        BotCommand("spec_cancel_booking", "Отменить запись (по ID)"),
+        BotCommand("spec_add_service", "Добавить услугу к специалисту")
     ]
     bot.set_my_commands(commands)
+
 
 # -----------------------------------------------------------------------------
 # Создаём Dispatcher и регистрируем все обработчики.
