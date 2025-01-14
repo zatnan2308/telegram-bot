@@ -33,6 +33,7 @@ from handlers.specialist_commands import (
     specialist_command_add_service
 )
 
+
 # Логгер
 from utils.logger import logger
 
@@ -83,6 +84,8 @@ dispatcher.add_handler(CommandHandler("stop_notifications", handle_manager_comma
 dispatcher.add_handler(CommandHandler("add_service", admin_command_add_service))
 dispatcher.add_handler(CommandHandler("add_specialist", admin_command_add_specialist))
 dispatcher.add_handler(CommandHandler("add_manager", admin_command_add_manager))
+dispatcher.add_handler(CommandHandler("service_list", service_list_command))
+dispatcher.add_handler(CommandHandler("spec_list", spec_list_command))
 
 # Команды для специалиста
 dispatcher.add_handler(CommandHandler("spec_free_time", specialist_command_free_time))
