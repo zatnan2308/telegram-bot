@@ -63,8 +63,6 @@ def get_user_bookings(user_id: int) -> List[Dict]:
         conn.close()
 
 
-# Внутри database/queries.py
-
 def get_services() -> List[Tuple[int, str]]:
     """
     Возвращает список (id, title) всех услуг из таблицы services.
@@ -85,7 +83,7 @@ def get_services() -> List[Tuple[int, str]]:
         if conn:
             conn.close()
 
-# Другие функции, связанные с услугами
+
 def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     """
     Поиск услуги по названию (точное или частичное совпадение) среди services.
@@ -115,6 +113,7 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     finally:
         cur.close()
         conn.close()
+
 
 def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
     """
@@ -217,12 +216,6 @@ def get_service_name(service_id: int) -> Optional[str]:
         cur.close()
         conn.close()
 
-def set_service_duration(service_id: int, duration: int) -> bool:
-    cur.execute("""
-        UPDATE services
-        SET duration_minutes = %s
-        WHERE id = %s
-    """, (duration, service_id))
 
 def get_specialist_name(specialist_id: int) -> Optional[str]:
     """
@@ -380,7 +373,7 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
         """, (chat_id, username))
         manager_id = cur.fetchone()[0]
 
-        # Запись в notification_settings
+        # Запись в notification_settings (должна быть соответствующая таблица)
         cur.execute("""
             INSERT INTO notification_settings (manager_id)
             VALUES (%s)
@@ -430,10 +423,10 @@ def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
         cur.close()
         conn.close()
 
+
 def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
     """
     Возвращает список активных (будущих) записей для конкретного специалиста (по specialist_id).
-    Например, формат возвращаемых объектов:
     [
       {
         "id": 10,
@@ -462,7 +455,6 @@ def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
         """, (specialist_id,))
         
         rows = cur.fetchall()
-        # Для удобства создаём словари
         result = []
         for row in rows:
             result.append({
@@ -472,16 +464,14 @@ def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
                 "user_name": row[3],
             })
         return result
-
     finally:
         cur.close()
         conn.close()
 
+
 def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
     """
     Отменяет запись с указанным booking_id. Возвращает кортеж (успех, сообщение).
-    Если запись успешно отменена, (True, "Запись ... успешно отменена").
-    Если произошла ошибка или запись не найдена, (False, "текст ошибки").
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -523,110 +513,11 @@ def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
         cur.close()
         conn.close()
 
-def set_service_duration(service_id: int, duration: int) -> bool:
-    """Установить поле duration_minutes для указанной услуги."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            UPDATE services
-            SET duration_minutes = %s
-            WHERE id = %s
-        """, (duration, service_id))
-        if cur.rowcount == 0:
-            return False  # не нашли услугу
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка в set_service_duration: {e}")
-        conn.rollback()
-        return False
-    finally:
-        cur.close()
-        conn.close()
-        
-
-def get_service_duration(service_id: int) -> int:
-    """
-    Возвращает длительность услуги (в минутах) из таблицы services.
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT duration_minutes FROM services WHERE id = %s", (service_id,))
-        row = cur.fetchone()
-        if row:
-            return row[0]  # duration_minutes
-        return 0
-    finally:
-        cur.close()
-        conn.close()
-# Внутри database/queries.py
-
-def get_specialist_work_hours(specialist_id: int) -> tuple:
-    """
-    Возвращает (work_start_time, work_end_time) для специалиста,
-    например (datetime.time(10,0), datetime.time(20,0)).
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT work_start_time, work_end_time
-            FROM specialists
-            WHERE id = %s
-        """, (specialist_id,))
-        row = cur.fetchone()
-        if row:
-            return (row[0], row[1])  # time, time
-        return (None, None)
-    finally:
-        cur.close()
-        conn.close()
-
-# Внутри database/queries.py
-
-def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.date) -> list:
-    """
-    Возвращает список бронирований вида:
-    [
-      { 'start': datetime.datetime, 'duration': int },
-      ...
-    ]
-    на заданную дату (date_obj).
-    """
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT b.date_time, s.duration_minutes
-            FROM bookings b
-            JOIN services s ON b.service_id = s.id
-            WHERE b.specialist_id = %s
-              AND DATE(b.date_time) = %s
-            ORDER BY b.date_time
-        """, (specialist_id, date_obj))
-
-        rows = cur.fetchall()
-        bookings = []
-        for row in rows:
-            start_dt = row[0]  # datetime
-            duration = row[1]  # int (duration_minutes)
-            bookings.append({
-                'start': start_dt,
-                'duration': duration
-            })
-        return bookings
-    finally:
-        cur.close()
-        conn.close()
-
-# Внутри database/queries.py
 
 def set_service_duration(service_id: int, duration: int) -> bool:
     """
     Устанавливает duration_minutes = duration для указанной услуги.
-    Возвращает True/False в зависимости от успеха.
+    Возвращает True, если услуга обновлена, иначе False.
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -649,3 +540,76 @@ def set_service_duration(service_id: int, duration: int) -> bool:
         cur.close()
         conn.close()
 
+
+def get_service_duration(service_id: int) -> int:
+    """
+    Возвращает длительность услуги (в минутах) из таблицы services.
+    Если услуга не найдена, вернёт 0.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT duration_minutes FROM services WHERE id = %s", (service_id,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        return 0
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_specialist_work_hours(specialist_id: int) -> tuple:
+    """
+    Возвращает (work_start_time, work_end_time) для специалиста,
+    например (datetime.time(10,0), datetime.time(20,0)).
+    Если нет данных — вернёт (None, None).
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT work_start_time, work_end_time
+            FROM specialists
+            WHERE id = %s
+        """, (specialist_id,))
+        row = cur.fetchone()
+        if row:
+            return (row[0], row[1])
+        return (None, None)
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.date) -> list:
+    """
+    Возвращает список бронирований вида:
+      [ {'start': datetime, 'duration': int}, ... ]
+    на заданную дату.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT b.date_time, s.duration_minutes
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            WHERE b.specialist_id = %s
+              AND DATE(b.date_time) = %s
+            ORDER BY b.date_time
+        """, (specialist_id, date_obj))
+
+        rows = cur.fetchall()
+        bookings = []
+        for row in rows:
+            start_dt = row[0]        # datetime
+            duration = row[1]       # int (duration_minutes)
+            bookings.append({
+                'start': start_dt,
+                'duration': duration
+            })
+        return bookings
+    finally:
+        cur.close()
+        conn.close()
