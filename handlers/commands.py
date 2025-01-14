@@ -1,5 +1,8 @@
 from telegram import Update
 from telegram.ext import CallbackContext
+# В начале файла handlers/commands.py:
+from database.queries import get_services
+
 
 def start(update: Update, context: CallbackContext) -> None:
     """Обработчик команды /start"""
