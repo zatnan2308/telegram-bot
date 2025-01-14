@@ -217,6 +217,12 @@ def get_service_name(service_id: int) -> Optional[str]:
         cur.close()
         conn.close()
 
+def set_service_duration(service_id: int, duration: int) -> bool:
+    cur.execute("""
+        UPDATE services
+        SET duration_minutes = %s
+        WHERE id = %s
+    """, (duration, service_id))
 
 def get_specialist_name(specialist_id: int) -> Optional[str]:
     """
