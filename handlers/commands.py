@@ -21,12 +21,10 @@ def help_command(update: Update, context: CallbackContext) -> None:
         "Для отмены записи напишите 'Отменить запись'."
     )
     
-def spec_list_command(update, context):
+def spec_list_command(update: Update, context: CallbackContext):
     """
     Показывает список всех специалистов.
     """
-    # ... код, который достаёт список специалистов
-    # например:
     specialists = get_specialists()
     text = "Список специалистов:\n"
     for sp_id, sp_name in specialists:
@@ -34,12 +32,10 @@ def spec_list_command(update, context):
     
     update.message.reply_text(text)
 
-def service_list_command(update, context):
+def service_list_command(update: Update, context: CallbackContext):
     """
     Показывает список всех услуг.
     """
-    # ... код, который достаёт список услуг
-    # например:
     services = get_services()
     text = "Список услуг:\n"
     for serv_id, serv_title in services:
