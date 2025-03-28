@@ -1,7 +1,6 @@
 import json
 import openai
 from typing import Dict, Optional
-
 from config.settings import OPENAI_API_KEY, GPT_MODEL
 from utils.logger import logger
 from database.queries import get_service_name, get_specialist_name
@@ -88,3 +87,30 @@ def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None)
 def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
     """Получает ответ от GPT"""
     return determine_intent(user_id, user_text, state)
+
+def resolve_specialist_name(input_text: str, specialists: list) -> str:
+    """
+    Принимает ввод пользователя (например, "Иван" или "Ваня") и список специалистов 
+    (список кортежей вида (id, full_name)).
+    Возвращает полное имя специалиста, выбранное ChatGPT.
+    """
+    specialist_names = [s[1] for s in specialists]
+    prompt = (
+        f"У меня есть список специалистов: {', '.join(specialist_names)}. "
+        f"Пользователь ввёл: '{input_text}'. "
+        f"Какой специалист имеется в виду? Ответь только точным именем из списка."
+    )
+    
+    response = openai.ChatCompletion.create(
+         model=GPT_MODEL,
+         messages=[
+             {"role": "system", "content": "Ты помощник по бронированию услуг в салоне красоты."},
+             {"role": "user", "content": prompt}
+         ],
+         temperature=0.3,
+         max_tokens=20
+    )
+    
+    resolved_name = response.choices[0].message.content.strip()
+    logger.info(f"Resolved specialist name: {resolved_name} for input: {input_text}")
+    return resolved_name
