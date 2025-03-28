@@ -26,26 +26,6 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         cur.close()
         conn.close()
 
-
-def set_service_duration(service_id: int, duration_minutes: int) -> bool:
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            UPDATE services
-            SET duration_minutes = %s
-            WHERE id = %s
-        """, (duration_minutes, service_id))
-        conn.commit()
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка в set_service_duration: {e}")
-        conn.rollback()
-        return False
-    finally:
-        cur.close()
-        conn.close()
-
 def get_user_bookings(user_id: int) -> List[Dict]:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -305,6 +285,29 @@ def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.d
             duration = row[1]
             bookings.append({'start': start_dt, 'duration': duration})
         return bookings
+    finally:
+        cur.close()
+        conn.close()
+
+def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT b.id, b.date_time, s.title as service_name, u.name as user_name
+            FROM bookings b
+            JOIN services s ON b.service_id = s.id
+            JOIN users u ON b.user_id = u.telegram_id
+            WHERE b.specialist_id = %s AND b.date_time > NOW()
+            ORDER BY b.date_time
+        """, (specialist_id,))
+        rows = cur.fetchall()
+        return [{
+            "booking_id": r[0],
+            "date_time": r[1].strftime("%Y-%m-%d %H:%M"),
+            "service_name": r[2],
+            "user_name": r[3],
+        } for r in rows]
     finally:
         cur.close()
         conn.close()
