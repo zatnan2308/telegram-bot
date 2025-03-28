@@ -5,7 +5,6 @@ import psycopg2
 from database.connection import get_db_connection
 from utils.logger import logger
 
-
 def get_user_state(user_id: int) -> Optional[Dict]:
     """
     Получение состояния пользователя (этап диалога), хранящегося в таблице user_state.
@@ -31,7 +30,6 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         cur.close()
         conn.close()
 
-
 def get_user_bookings(user_id: int) -> List[Dict]:
     """
     Получение всех активных (будущих) записей пользователя из таблицы bookings.
@@ -41,10 +39,10 @@ def get_user_bookings(user_id: int) -> List[Dict]:
     try:
         cur.execute("""
             SELECT b.id, b.service_id, b.specialist_id, b.date_time,
-                   s.title as service_name, sp.name as specialist_name
+                   s.title as service_name, u.name as user_name
             FROM bookings b
             JOIN services s ON b.service_id = s.id
-            JOIN specialists sp ON b.specialist_id = sp.id
+            JOIN users u ON b.user_id = u.telegram_id
             WHERE b.user_id = %s
               AND b.date_time > NOW()
             ORDER BY b.date_time
@@ -56,12 +54,11 @@ def get_user_bookings(user_id: int) -> List[Dict]:
             'specialist_id': r[2],
             'date_time': r[3].strftime("%Y-%m-%d %H:%M"),
             'service_name': r[4],
-            'specialist_name': r[5]
+            'user_name': r[5]
         } for r in rows]
     finally:
         cur.close()
         conn.close()
-
 
 def get_services() -> List[Tuple[int, str]]:
     """
@@ -82,7 +79,6 @@ def get_services() -> List[Tuple[int, str]]:
             cur.close()
         if conn:
             conn.close()
-
 
 def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     """
@@ -114,7 +110,6 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
         cur.close()
         conn.close()
 
-
 def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
     """
     Возвращает список (id, name) специалистов.
@@ -138,7 +133,6 @@ def get_specialists(service_id: Optional[int] = None) -> List[Tuple[int, str]]:
         cur.close()
         conn.close()
 
-
 def get_available_times(spec_id: int, serv_id: int) -> List[str]:
     """
     Возвращает список свободных слотов (YYYY-MM-DD HH:MM) для пары (spec_id, serv_id)
@@ -160,7 +154,6 @@ def get_available_times(spec_id: int, serv_id: int) -> List[str]:
     finally:
         cur.close()
         conn.close()
-
 
 def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> bool:
     """
@@ -201,7 +194,6 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
         cur.close()
         conn.close()
 
-
 def get_service_name(service_id: int) -> Optional[str]:
     """
     По id услуги возвращает её название (title) или None, если нет.
@@ -216,7 +208,6 @@ def get_service_name(service_id: int) -> Optional[str]:
         cur.close()
         conn.close()
 
-
 def get_specialist_name(specialist_id: int) -> Optional[str]:
     """
     По id специалиста возвращает его имя (name) или None, если нет.
@@ -230,7 +221,6 @@ def get_specialist_name(specialist_id: int) -> Optional[str]:
     finally:
         cur.close()
         conn.close()
-
 
 def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Optional[Tuple[int, str]]:
     """
@@ -255,7 +245,6 @@ def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Op
     finally:
         cur.close()
         conn.close()
-
 
 def set_user_state(
     user_id: int,
@@ -284,7 +273,6 @@ def set_user_state(
         cur.close()
         conn.close()
 
-
 def delete_user_state(user_id: int) -> None:
     """
     Удаляет состояние пользователя из таблицы user_state.
@@ -297,7 +285,6 @@ def delete_user_state(user_id: int) -> None:
     finally:
         cur.close()
         conn.close()
-
 
 def create_service(service_name: str, price: float) -> bool:
     """
@@ -328,7 +315,6 @@ def create_service(service_name: str, price: float) -> bool:
         cur.close()
         conn.close()
 
-
 def create_specialist(specialist_name: str) -> bool:
     """
     Создаёт нового специалиста (name) в таблице specialists.
@@ -353,7 +339,6 @@ def create_specialist(specialist_name: str) -> bool:
         cur.close()
         conn.close()
 
-
 def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
     """
     Создаёт нового менеджера по chat_id (и необязательному username) в таблице managers.
@@ -373,7 +358,7 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
         """, (chat_id, username))
         manager_id = cur.fetchone()[0]
 
-        # Запись в notification_settings (должна быть соответствующая таблица)
+        # Запись в notification_settings
         cur.execute("""
             INSERT INTO notification_settings (manager_id)
             VALUES (%s)
@@ -388,7 +373,6 @@ def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
     finally:
         cur.close()
         conn.close()
-
 
 def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     """
@@ -423,7 +407,6 @@ def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
         cur.close()
         conn.close()
 
-
 def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
     """
     Возвращает список активных (будущих) записей для конкретного специалиста (по specialist_id).
@@ -448,7 +431,7 @@ def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
                 u.name as user_name
             FROM bookings b
             JOIN services s ON b.service_id = s.id
-            JOIN users u ON b.user_id = u.id
+            JOIN users u ON b.user_id = u.telegram_id
             WHERE b.specialist_id = %s
               AND b.date_time > NOW()
             ORDER BY b.date_time
@@ -467,7 +450,6 @@ def get_bookings_for_specialist(specialist_id: int) -> List[Dict]:
     finally:
         cur.close()
         conn.close()
-
 
 def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
     """
@@ -513,7 +495,6 @@ def cancel_booking_by_id(booking_id: int) -> Tuple[bool, str]:
         cur.close()
         conn.close()
 
-
 def set_service_duration(service_id: int, duration: int) -> bool:
     """
     Устанавливает duration_minutes = duration для указанной услуги.
@@ -540,7 +521,6 @@ def set_service_duration(service_id: int, duration: int) -> bool:
         cur.close()
         conn.close()
 
-
 def get_service_duration(service_id: int) -> int:
     """
     Возвращает длительность услуги (в минутах) из таблицы services.
@@ -557,7 +537,6 @@ def get_service_duration(service_id: int) -> int:
     finally:
         cur.close()
         conn.close()
-
 
 def get_specialist_work_hours(specialist_id: int) -> tuple:
     """
@@ -580,7 +559,6 @@ def get_specialist_work_hours(specialist_id: int) -> tuple:
     finally:
         cur.close()
         conn.close()
-
 
 def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.date) -> list:
     """
