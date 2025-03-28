@@ -15,12 +15,7 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         """, (user_id,))
         row = cur.fetchone()
         if row:
-            return {
-                'step': row[0],
-                'service_id': row[1],
-                'specialist_id': row[2],
-                'chosen_time': row[3]
-            }
+            return {'step': row[0], 'service_id': row[1], 'specialist_id': row[2], 'chosen_time': row[3]}
         return None
     finally:
         cur.close()
@@ -285,46 +280,6 @@ def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.d
             duration = row[1]
             bookings.append({'start': start_dt, 'duration': duration})
         return bookings
-    finally:
-        cur.close()
-        conn.close()
-
-def get_service_name(service_id: int) -> Optional[str]:
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT title FROM services WHERE id = %s", (service_id,))
-        result = cur.fetchone()
-        return result[0] if result else None
-    finally:
-        cur.close()
-        conn.close()
-
-def get_specialist_name(specialist_id: int) -> Optional[str]:
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT name FROM specialists WHERE id = %s", (specialist_id,))
-        result = cur.fetchone()
-        return result[0] if result else None
-    finally:
-        cur.close()
-        conn.close()
-
-def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Optional[Tuple[int, str]]:
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT DISTINCT s.id, s.name
-            FROM specialists s
-            JOIN specialist_services ss ON s.id = ss.specialist_id
-            JOIN booking_times bt ON s.id = bt.specialist_id
-            WHERE ss.service_id = %s AND s.id != %s AND bt.is_booked = FALSE
-            LIMIT 1
-        """, (service_id, exclude_specialist_id))
-        result = cur.fetchone()
-        return result if result else None
     finally:
         cur.close()
         conn.close()
