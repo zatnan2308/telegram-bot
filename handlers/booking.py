@@ -18,20 +18,18 @@ from database.queries import (
 from services.gpt import get_gpt_response
 from utils.logger import logger
 from utils.time_utils import parse_time_input
-# pseudo-код где-нибудь в handlers/booking.py
 from services.scheduler import get_available_start_times
 
 def show_free_slots(update, context):
     # specialist_id = ... (из state или из context.args)
     # service_id = ...
-    # date_obj = ...  (нужно превратить из строки '2025-05-10' в datetime.date(2025,5,10))
+    # date_obj = ...  (нужно превратить из строки 'YYYY-MM-DD' в datetime.date)
     
     slots = get_available_start_times(specialist_id, date_obj, service_id)
     if not slots:
         update.message.reply_text("К сожалению, нет свободных слотов в этот день.")
     else:
         update.message.reply_text("Свободные интервалы:\n" + "\n".join(slots))
-
 
 def handle_list_services(update: telegram.Update, gpt_response_text: str):
     """Обработка action LIST_SERVICES"""
@@ -49,8 +47,7 @@ def handle_select_service(update: telegram.Update, user_id: int, extracted_data:
         services = get_services()
         service_list = "\n".join([f"- {s[1]}" for s in services])
         update.message.reply_text(
-            f"{gpt_response_text}\n\n"
-            f"Доступные услуги:\n{service_list}"
+            f"{gpt_response_text}\n\nДоступные услуги:\n{service_list}"
         )
         return
 
@@ -93,21 +90,30 @@ def handle_select_specialist(update: telegram.Update, user_id: int, state: Dict,
         update.message.reply_text("Сначала выберите услугу.")
         return
 
-    specialist_name = extracted_data.get('specialist')
+    specialist_input = extracted_data.get('specialist')
     specialists = get_specialists(state['service_id'])
     
-    if not specialist_name:
+    if not specialist_input:
         specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
         update.message.reply_text(
-            f"{gpt_response_text}\n\n"
-            f"Доступные специалисты:\n{specialists_text}"
+            f"{gpt_response_text}\n\nДоступные специалисты:\n{specialists_text}"
         )
         return
 
+    # Попытка точного совпадения
     specialist = next(
-        (s for s in specialists if s[1].lower() == specialist_name.lower()),
+        (s for s in specialists if s[1].lower() == specialist_input.lower()),
         None
     )
+    
+    # Если прямое совпадение не найдено, используем ChatGPT для разрешения варианта ввода
+    if not specialist:
+        from services.gpt import resolve_specialist_name  # Импортируем новую функцию
+        resolved_name = resolve_specialist_name(specialist_input, specialists)
+        specialist = next(
+            (s for s in specialists if s[1].lower() == resolved_name.lower()),
+            None
+        )
     
     if not specialist:
         specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
@@ -126,8 +132,7 @@ def handle_select_specialist(update: telegram.Update, user_id: int, state: Dict,
         )
         times_text = "\n".join([f"- {t}" for t in available_times])
         update.message.reply_text(
-            f"{gpt_response_text}\n\n"
-            f"Доступное время:\n{times_text}"
+            f"{gpt_response_text}\n\nДоступное время:\n{times_text}"
         )
     else:
         update.message.reply_text(
@@ -141,8 +146,7 @@ def handle_select_time(update: telegram.Update, user_id: int, state: Dict, extra
         if services:
             services_text = "\n".join([f"- {s[1]}" for s in services])
             update.message.reply_text(
-                "Сначала выберите услугу из списка:\n\n"
-                f"{services_text}"
+                "Сначала выберите услугу из списка:\n\n" + services_text
             )
         return
 
@@ -157,12 +161,12 @@ def handle_select_time(update: telegram.Update, user_id: int, state: Dict, extra
                 service_id=state['service_id']
             )
             update.message.reply_text(
-                "К сожалению, у выбранного специалиста нет свободного времени.\n"
+                "К сожалению, у выбранного специалиста нет свободного времени.\n" +
                 f"Вы можете записаться к {alternative_specialist[1]}. Хотите посмотреть доступное время?"
             )
         else:
             update.message.reply_text(
-                "К сожалению, сейчас нет свободного времени для записи.\n"
+                "К сожалению, сейчас нет свободного времени для записи.\n" +
                 "Попробуйте выбрать другую услугу или свяжитесь с администратором."
             )
         return
@@ -183,10 +187,10 @@ def handle_select_time(update: telegram.Update, user_id: int, state: Dict, extra
         service_name = get_service_name(state['service_id'])
         specialist_name = get_specialist_name(state['specialist_id'])
         update.message.reply_text(
-            f"Подтвердите запись:\n\n"
-            f"🎯 Услуга: {service_name}\n"
-            f"👩‍💼 Специалист: {specialist_name}\n"
-            f"📅 Время: {chosen_time}\n\n"
+            f"Подтвердите запись:\n\n" +
+            f"🎯 Услуга: {service_name}\n" +
+            f"👩‍💼 Специалист: {specialist_name}\n" +
+            f"📅 Время: {chosen_time}\n\n" +
             "Для подтверждения напишите 'да' или 'нет' для отмены."
         )
     else:
@@ -216,10 +220,10 @@ def handle_confirm_booking(update: telegram.Update, user_id: int, state: Dict, u
             if MANAGER_CHAT_ID:
                 bot.send_message(
                     MANAGER_CHAT_ID,
-                    f"Новая запись!\n"
-                    f"Услуга: {service_name}\n"
-                    f"Специалист: {specialist_name}\n"
-                    f"Время: {state['chosen_time']}\n"
+                    f"Новая запись!\n" +
+                    f"Услуга: {service_name}\n" +
+                    f"Специалист: {specialist_name}\n" +
+                    f"Время: {state['chosen_time']}\n" +
                     f"Клиент ID: {user_id}"
                 )
         else:
