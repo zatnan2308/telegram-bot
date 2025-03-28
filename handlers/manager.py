@@ -1,29 +1,22 @@
 from typing import Optional, Dict, List
 import telegram
 from telegram.ext import CallbackContext
-
 from config.settings import MANAGER_CHAT_ID
 from database.connection import get_db_connection
 from database.queries import get_user_bookings
 from utils.logger import logger
 
 def is_manager(chat_id: int) -> bool:
-    """Проверяет, является ли пользователь менеджером"""
     return str(chat_id) == str(MANAGER_CHAT_ID)
 
 def handle_manager_commands(update: telegram.Update, context: CallbackContext) -> None:
-    """Обработчик команд менеджера"""
     chat_id = update.effective_chat.id
-    
     if not is_manager(chat_id):
         update.message.reply_text("У вас нет доступа к командам менеджера.")
         return
-
     command = update.message.text.lower()
-    
     try:
         if command == '/bookings':
-            # Получаем все активные записи
             bookings = get_all_bookings()
             if bookings:
                 message = "Активные записи:\n\n"
@@ -38,9 +31,7 @@ def handle_manager_commands(update: telegram.Update, context: CallbackContext) -
                 update.message.reply_text(message)
             else:
                 update.message.reply_text("Нет активных записей.")
-                
         elif command == '/stats':
-            # Статистика по записям
             stats = get_booking_stats()
             message = (
                 f"📊 Статистика:\n\n"
@@ -50,20 +41,13 @@ def handle_manager_commands(update: telegram.Update, context: CallbackContext) -
                 f"Записей на сегодня: {stats['today']}"
             )
             update.message.reply_text(message)
-            
         else:
-            update.message.reply_text(
-                "Доступные команды:\n"
-                "/bookings - показать все активные записи\n"
-                "/stats - показать статистику"
-            )
-            
+            update.message.reply_text("Доступные команды:\n/bookings - показать все активные записи\n/stats - показать статистику")
     except Exception as e:
         logger.error(f"Ошибка в обработке команды менеджера: {e}", exc_info=True)
         update.message.reply_text("Произошла ошибка при выполнении команды.")
 
 def get_all_bookings() -> List[Dict]:
-    """Получает все активные записи"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -73,8 +57,7 @@ def get_all_bookings() -> List[Dict]:
             FROM bookings b
             JOIN services s ON b.service_id = s.id
             JOIN specialists sp ON b.specialist_id = sp.id
-            WHERE b.date_time > NOW()
-              AND b.status = 'active'
+            WHERE b.date_time > NOW() AND b.status = 'active'
             ORDER BY b.date_time
         """)
         rows = cur.fetchall()
@@ -90,33 +73,17 @@ def get_all_bookings() -> List[Dict]:
         conn.close()
 
 def get_booking_stats() -> Dict:
-    """Получает статистику по записям"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Общее количество записей
         cur.execute("SELECT COUNT(*) FROM bookings")
         total = cur.fetchone()[0]
-        
-        # Активные записи
-        cur.execute("""
-            SELECT COUNT(*) FROM bookings 
-            WHERE status = 'active' AND date_time > NOW()
-        """)
+        cur.execute("SELECT COUNT(*) FROM bookings WHERE status = 'active' AND date_time > NOW()")
         active = cur.fetchone()[0]
-        
-        # Отмененные записи
         cur.execute("SELECT COUNT(*) FROM bookings WHERE status = 'cancelled'")
         cancelled = cur.fetchone()[0]
-        
-        # Записи на сегодня
-        cur.execute("""
-            SELECT COUNT(*) FROM bookings 
-            WHERE status = 'active' 
-              AND date_time::date = CURRENT_DATE
-        """)
+        cur.execute("SELECT COUNT(*) FROM bookings WHERE status = 'active' AND date_time::date = CURRENT_DATE")
         today = cur.fetchone()[0]
-        
         return {
             'total': total,
             'active': active,
