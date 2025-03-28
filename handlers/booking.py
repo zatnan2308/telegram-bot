@@ -21,10 +21,7 @@ from utils.time_utils import parse_time_input
 from services.scheduler import get_available_start_times
 
 def show_free_slots(update, context):
-    # specialist_id = ... (из state или из context.args)
-    # service_id = ...
-    # date_obj = ...  (нужно превратить из строки 'YYYY-MM-DD' в datetime.date)
-    
+    # specialist_id, service_id, date_obj нужно получить из состояния или аргументов
     slots = get_available_start_times(specialist_id, date_obj, service_id)
     if not slots:
         update.message.reply_text("К сожалению, нет свободных слотов в этот день.")
@@ -234,7 +231,27 @@ def handle_confirm_booking(update: telegram.Update, user_id: int, state: Dict, u
     delete_user_state(user_id)
 
 def handle_booking_with_gpt(update: telegram.Update, user_id: int, user_text: str, state: Optional[Dict] = None):
-    """Основной обработчик бронирования с использованием GPT"""
+    """
+    Основной обработчик бронирования с использованием GPT.
+    Добавлена предварительная проверка: если введённый текст соответствует названию услуги,
+    то состояние обновляется и бот предлагает выбрать специалиста для новой услуги.
+    """
+    # Попытка распознать, что пользователь ввёл название услуги
+    service_candidate = find_service_by_name(user_text)
+    if service_candidate:
+        # Если состояние отсутствует или выбранная услуга отличается от текущей
+        if (not state) or (state.get('service_id') != service_candidate[0]):
+            set_user_state(user_id, "select_specialist", service_id=service_candidate[0])
+            specialists = get_specialists(service_candidate[0])
+            if specialists:
+                specialists_text = "\n".join([f"- {s[1]}" for s in specialists])
+                update.message.reply_text(
+                    f"Вы выбрали услугу '{service_candidate[1]}'. Теперь выберите специалиста:\n{specialists_text}"
+                )
+            else:
+                update.message.reply_text("К сожалению, нет доступных специалистов для выбранной услуги.")
+            return
+
     try:
         result = get_gpt_response(user_id, user_text, state)
         
