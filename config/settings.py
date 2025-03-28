@@ -1,17 +1,14 @@
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из файла .env
 load_dotenv()
 
-# Основные настройки бота
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 APP_URL = os.getenv("APP_URL")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GPT_MODEL = os.getenv("GPT_MODEL", "gpt-3.5-turbo")  # Модель GPT с дефолтным значением
+GPT_MODEL = os.getenv("GPT_MODEL", "gpt-3.5-turbo")
 
-# Приводим MANAGER_CHAT_ID к целому числу
 _MANAGER_CHAT_ID = os.getenv("MANAGER_CHAT_ID")
 try:
     MANAGER_CHAT_ID = int(_MANAGER_CHAT_ID) if _MANAGER_CHAT_ID is not None else None
@@ -20,7 +17,6 @@ except ValueError:
 
 ADMIN_ID = 561102768
 
-# Проверка наличия всех необходимых переменных окружения
 REQUIRED_ENV_VARS = {
     "TOKEN": TOKEN,
     "DATABASE_URL": DATABASE_URL,
