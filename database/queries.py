@@ -73,10 +73,13 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Сначала ищем точное совпадение
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) = LOWER(%s)", (user_text,))
         service = cur.fetchone()
         if service:
             return service
+
+        # Если точного совпадения нет, ищем частичное
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) LIKE LOWER(%s)", (f"%{user_text}%",))
         matches = cur.fetchall()
         if matches:
@@ -112,7 +115,9 @@ def get_available_times(spec_id: int, serv_id: int) -> List[str]:
         cur.execute("""
             SELECT slot_time
             FROM booking_times
-            WHERE specialist_id = %s AND service_id = %s AND is_booked = FALSE
+            WHERE specialist_id = %s
+              AND service_id = %s
+              AND is_booked = FALSE
             ORDER BY slot_time
         """, (spec_id, serv_id))
         rows = cur.fetchall()
@@ -127,13 +132,16 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
     except ValueError:
         logger.error(f"Неверный формат даты: {date_str}")
         return False
+
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE booking_times
             SET is_booked = TRUE
-            WHERE specialist_id = %s AND service_id = %s AND slot_time = %s
+            WHERE specialist_id = %s
+              AND service_id = %s
+              AND slot_time = %s
         """, (spec_id, serv_id, chosen_dt))
         cur.execute("""
             INSERT INTO bookings (user_id, service_id, specialist_id, date_time)
@@ -149,42 +157,96 @@ def create_booking(user_id: int, serv_id: int, spec_id: int, date_str: str) -> b
         cur.close()
         conn.close()
 
-def get_service_name(service_id: int) -> Optional[str]:
+def create_service(service_name: str, price: float) -> bool:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT title FROM services WHERE id = %s", (service_id,))
-        result = cur.fetchone()
-        return result[0] if result else None
+        cur.execute("SELECT id FROM services WHERE LOWER(title) = LOWER(%s)", (service_name,))
+        row = cur.fetchone()
+        if row:
+            return False
+        cur.execute("""
+            INSERT INTO services (title, price)
+            VALUES (%s, %s)
+        """, (service_name, price))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_service: {e}")
+        conn.rollback()
+        return False
     finally:
         cur.close()
         conn.close()
 
-def get_specialist_name(specialist_id: int) -> Optional[str]:
+def create_specialist(specialist_name: str) -> bool:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT name FROM specialists WHERE id = %s", (specialist_id,))
-        result = cur.fetchone()
-        return result[0] if result else None
+        cur.execute("SELECT id FROM specialists WHERE LOWER(name) = LOWER(%s)", (specialist_name,))
+        row = cur.fetchone()
+        if row:
+            return False
+        cur.execute("INSERT INTO specialists (name) VALUES (%s)", (specialist_name,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_specialist: {e}")
+        conn.rollback()
+        return False
     finally:
         cur.close()
         conn.close()
 
-def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Optional[Tuple[int, str]]:
+def create_manager_in_db(chat_id: int, username: Optional[str]) -> bool:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM managers WHERE chat_id = %s", (chat_id,))
+        if cur.fetchone():
+            return False
+        cur.execute("""
+            INSERT INTO managers (chat_id, username)
+            VALUES (%s, %s)
+            RETURNING id
+        """, (chat_id, username))
+        manager_id = cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO notification_settings (manager_id)
+            VALUES (%s)
+        """, (manager_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в create_manager_in_db: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def add_service_to_specialist(spec_id: int, serv_id: int) -> str:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            SELECT DISTINCT s.id, s.name
-            FROM specialists s
-            JOIN specialist_services ss ON s.id = ss.specialist_id
-            JOIN booking_times bt ON s.id = bt.specialist_id
-            WHERE ss.service_id = %s AND s.id != %s AND bt.is_booked = FALSE
-            LIMIT 1
-        """, (service_id, exclude_specialist_id))
-        result = cur.fetchone()
-        return result if result else None
+            SELECT 1
+            FROM specialist_services
+            WHERE specialist_id = %s AND service_id = %s
+        """, (spec_id, serv_id))
+        row = cur.fetchone()
+        if row:
+            return f"У специалиста (id={spec_id}) уже есть услуга (id={serv_id})."
+        cur.execute("""
+            INSERT INTO specialist_services (specialist_id, service_id)
+            VALUES (%s, %s)
+        """, (spec_id, serv_id))
+        conn.commit()
+        return f"Услуга (id={serv_id}) добавлена к специалисту (id={spec_id})!"
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Ошибка при добавлении услуги {serv_id} к специалисту {spec_id}: {e}")
+        return f"Ошибка: {e}"
     finally:
         cur.close()
         conn.close()
