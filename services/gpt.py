@@ -4,16 +4,17 @@ from typing import Dict, Optional
 from config.settings import OPENAI_API_KEY, GPT_MODEL
 from utils.logger import logger
 from database.queries import get_service_name, get_specialist_name
+from conversation import get_conversation_history
 
-# Устанавливаем API ключ
 openai.api_key = OPENAI_API_KEY
 
 def get_booking_system_prompt() -> str:
-    """Возвращает системный промпт для бронирования"""
     return """
     Ты — ассистент по бронированию услуг в салоне красоты. 
+    Отвечай максимально человечно, эмпатично и дружелюбно. 
+    Твои ответы должны быть подробными и адаптивными, учитывая контекст беседы.
     
-    Текущие доступные действия:
+    Доступные действия:
     - LIST_SERVICES: показать список услуг
     - SELECT_SERVICE: выбрать услугу
     - SELECT_SPECIALIST: выбрать специалиста
@@ -33,11 +34,10 @@ def get_booking_system_prompt() -> str:
     }
     """
 
-def get_booking_context(state: Optional[Dict]) -> str:
-    """Формирует контекст для GPT на основе текущего состояния"""
+def get_booking_context(state: Optional[Dict], user_id: int) -> str:
     context = ""
     if state:
-        context = f"Текущий этап бронирования: {state['step']}\n"
+        context += f"Текущий этап бронирования: {state.get('step')}\n"
         if state.get('service_id'):
             service_name = get_service_name(state['service_id'])
             context += f"Выбранная услуга: {service_name}\n"
@@ -46,14 +46,17 @@ def get_booking_context(state: Optional[Dict]) -> str:
             context += f"Выбранный специалист: {specialist_name}\n"
         if state.get('chosen_time'):
             context += f"Выбранное время: {state['chosen_time']}\n"
+    history = get_conversation_history(user_id)
+    if history:
+        context += "История беседы:\n"
+        for msg in history:
+            context += f"{msg['role']}: {msg['content']}\n"
     return context
 
 def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
-    """Определяет намерение пользователя с помощью GPT"""
     try:
         system_prompt = get_booking_system_prompt()
-        context = get_booking_context(state)
-        
+        context = get_booking_context(state, user_id)
         response = openai.ChatCompletion.create(
             model=GPT_MODEL,
             messages=[
@@ -63,12 +66,9 @@ def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None)
             temperature=0.7,
             max_tokens=200
         )
-        
         gpt_response = response.choices[0].message.content
         logger.info(f"GPT response for user {user_id}: {gpt_response}")
-        
         return json.loads(gpt_response)
-
     except json.JSONDecodeError as e:
         logger.error(f"Ошибка парсинга JSON от GPT для user {user_id}: {e}")
         return {
@@ -85,22 +85,15 @@ def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None)
         }
 
 def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
-    """Получает ответ от GPT"""
     return determine_intent(user_id, user_text, state)
 
 def resolve_specialist_name(input_text: str, specialists: list) -> str:
-    """
-    Принимает ввод пользователя (например, "Иван" или "Ваня") и список специалистов 
-    (список кортежей вида (id, full_name)).
-    Возвращает полное имя специалиста, выбранное ChatGPT.
-    """
     specialist_names = [s[1] for s in specialists]
     prompt = (
         f"У меня есть список специалистов: {', '.join(specialist_names)}. "
         f"Пользователь ввёл: '{input_text}'. "
         f"Какой специалист имеется в виду? Ответь только точным именем из списка."
     )
-    
     response = openai.ChatCompletion.create(
          model=GPT_MODEL,
          messages=[
@@ -110,7 +103,6 @@ def resolve_specialist_name(input_text: str, specialists: list) -> str:
          temperature=0.3,
          max_tokens=20
     )
-    
     resolved_name = response.choices[0].message.content.strip()
     logger.info(f"Resolved specialist name: {resolved_name} for input: {input_text}")
     return resolved_name
