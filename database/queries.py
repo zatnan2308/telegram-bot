@@ -26,6 +26,26 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         cur.close()
         conn.close()
 
+
+def set_service_duration(service_id: int, duration_minutes: int) -> bool:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE services
+            SET duration_minutes = %s
+            WHERE id = %s
+        """, (duration_minutes, service_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в set_service_duration: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
 def get_user_bookings(user_id: int) -> List[Dict]:
     conn = get_db_connection()
     cur = conn.cursor()
