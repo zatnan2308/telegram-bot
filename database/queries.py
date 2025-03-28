@@ -73,13 +73,10 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Сначала ищем точное совпадение
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) = LOWER(%s)", (user_text,))
         service = cur.fetchone()
         if service:
             return service
-
-        # Если точного совпадения нет, ищем частичное
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) LIKE LOWER(%s)", (f"%{user_text}%",))
         matches = cur.fetchall()
         if matches:
@@ -288,6 +285,46 @@ def get_bookings_for_specialist_on_date(specialist_id: int, date_obj: datetime.d
             duration = row[1]
             bookings.append({'start': start_dt, 'duration': duration})
         return bookings
+    finally:
+        cur.close()
+        conn.close()
+
+def get_service_name(service_id: int) -> Optional[str]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT title FROM services WHERE id = %s", (service_id,))
+        result = cur.fetchone()
+        return result[0] if result else None
+    finally:
+        cur.close()
+        conn.close()
+
+def get_specialist_name(specialist_id: int) -> Optional[str]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT name FROM specialists WHERE id = %s", (specialist_id,))
+        result = cur.fetchone()
+        return result[0] if result else None
+    finally:
+        cur.close()
+        conn.close()
+
+def find_available_specialist(service_id: int, exclude_specialist_id: int) -> Optional[Tuple[int, str]]:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT DISTINCT s.id, s.name
+            FROM specialists s
+            JOIN specialist_services ss ON s.id = ss.specialist_id
+            JOIN booking_times bt ON s.id = bt.specialist_id
+            WHERE ss.service_id = %s AND s.id != %s AND bt.is_booked = FALSE
+            LIMIT 1
+        """, (service_id, exclude_specialist_id))
+        result = cur.fetchone()
+        return result if result else None
     finally:
         cur.close()
         conn.close()
