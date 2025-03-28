@@ -7,7 +7,6 @@ from utils.logger import logger
 bot = telegram.Bot(token=TOKEN)
 
 def get_active_managers() -> List[Tuple]:
-    """Получение списка активных менеджеров"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -24,7 +23,6 @@ def get_active_managers() -> List[Tuple]:
         conn.close()
 
 def notify_managers(message: str, notification_type: str = 'new_booking') -> None:
-    """Отправка уведомлений менеджерам"""
     managers = get_active_managers()
     for mgr in managers:
         chat_id, notify_new, notify_cancel, notify_reschedule = mgr
@@ -39,27 +37,23 @@ def notify_managers(message: str, notification_type: str = 'new_booking') -> Non
             except Exception as e:
                 logger.error(f"Ошибка отправки уведомления менеджеру {chat_id}: {e}")
 
-def register_manager(chat_id: int, username: Optional[str] = None) -> bool:
-    """Регистрация нового менеджера"""
+def register_manager(chat_id: int, username: str = None) -> bool:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute("SELECT id FROM managers WHERE chat_id = %s", (chat_id,))
         if cur.fetchone():
             return False
-            
         cur.execute("""
             INSERT INTO managers (chat_id, username)
             VALUES (%s, %s)
             RETURNING id
         """, (chat_id, username))
         manager_id = cur.fetchone()[0]
-        
         cur.execute("""
             INSERT INTO notification_settings (manager_id)
             VALUES (%s)
         """, (manager_id,))
-        
         conn.commit()
         return True
     finally:
