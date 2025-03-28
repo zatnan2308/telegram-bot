@@ -4,7 +4,6 @@ from database.connection import get_db_connection
 from utils.logger import logger
 
 def get_user_state(user_id: int) -> Optional[Dict]:
-    """Получение состояния пользователя"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -15,25 +14,13 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         """, (user_id,))
         row = cur.fetchone()
         if row:
-            return {
-                'step': row[0],
-                'service_id': row[1],
-                'specialist_id': row[2],
-                'chosen_time': row[3]
-            }
+            return {'step': row[0], 'service_id': row[1], 'specialist_id': row[2], 'chosen_time': row[3]}
         return None
     finally:
         cur.close()
         conn.close()
 
-def set_user_state(
-    user_id: int,
-    step: str,
-    service_id: Optional[int] = None,
-    specialist_id: Optional[int] = None,
-    chosen_time: Optional[str] = None
-) -> None:
-    """Установка состояния пользователя"""
+def set_user_state(user_id: int, step: str, service_id: Optional[int] = None, specialist_id: Optional[int] = None, chosen_time: Optional[str] = None) -> None:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -52,7 +39,6 @@ def set_user_state(
         conn.close()
 
 def delete_user_state(user_id: int) -> None:
-    """Удаление состояния пользователя"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -63,7 +49,6 @@ def delete_user_state(user_id: int) -> None:
         conn.close()
 
 def get_user_bookings(user_id: int) -> List[Dict]:
-    """Получение всех активных записей пользователя"""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -73,8 +58,7 @@ def get_user_bookings(user_id: int) -> List[Dict]:
             FROM bookings b
             JOIN services s ON b.service_id = s.id
             JOIN specialists sp ON b.specialist_id = sp.id
-            WHERE b.user_id = %s
-              AND b.date_time > NOW()
+            WHERE b.user_id = %s AND b.date_time > NOW()
             ORDER BY b.date_time
         """, (user_id,))
         rows = cur.fetchall()
