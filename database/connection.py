@@ -25,24 +25,34 @@ def create_tables():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Таблица услуг
+        # Таблица услуг с корректным именем столбца для длительности
         cur.execute("""
             CREATE TABLE IF NOT EXISTS services (
                 id SERIAL PRIMARY KEY,
                 title VARCHAR(100) NOT NULL,
                 description TEXT,
                 price DECIMAL(10, 2),
-                duration INTEGER  -- длительность в минутах
+                duration_minutes INTEGER  -- длительность в минутах
             )
         """)
 
-        # Таблица специалистов
+        # Таблица специалистов с добавлением рабочих часов
         cur.execute("""
             CREATE TABLE IF NOT EXISTS specialists (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
-                is_active BOOLEAN DEFAULT true
+                is_active BOOLEAN DEFAULT true,
+                work_start_time TIME,
+                work_end_time TIME
+            )
+        """)
+
+        # Таблица пользователей (используется telegram_id как первичный ключ)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                telegram_id BIGINT PRIMARY KEY,
+                name VARCHAR(100)
             )
         """)
 
@@ -103,9 +113,19 @@ def create_tables():
             )
         """)
 
+        # Таблица настроек уведомлений для менеджеров
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notification_settings (
+                id SERIAL PRIMARY KEY,
+                manager_id INTEGER REFERENCES managers(id),
+                notify_new_booking BOOLEAN DEFAULT true,
+                notify_cancellation BOOLEAN DEFAULT true,
+                notify_reschedule BOOLEAN DEFAULT true
+            )
+        """)
+
         conn.commit()
         logger.info("Таблицы успешно созданы")
-
     except psycopg2.Error as e:
         logger.error(f"Ошибка создания таблиц: {e}")
         conn.rollback()
