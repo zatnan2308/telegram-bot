@@ -15,7 +15,12 @@ def get_user_state(user_id: int) -> Optional[Dict]:
         """, (user_id,))
         row = cur.fetchone()
         if row:
-            return {'step': row[0], 'service_id': row[1], 'specialist_id': row[2], 'chosen_time': row[3]}
+            return {
+                'step': row[0],
+                'service_id': row[1],
+                'specialist_id': row[2],
+                'chosen_time': row[3]
+            }
         return None
     finally:
         cur.close()
@@ -68,10 +73,13 @@ def find_service_by_name(user_text: str) -> Optional[Tuple[int, str]]:
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Сначала ищем точное совпадение
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) = LOWER(%s)", (user_text,))
         service = cur.fetchone()
         if service:
             return service
+
+        # Если точного совпадения нет, ищем частичное
         cur.execute("SELECT id, title FROM services WHERE LOWER(title) LIKE LOWER(%s)", (f"%{user_text}%",))
         matches = cur.fetchall()
         if matches:
