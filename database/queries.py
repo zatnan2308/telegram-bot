@@ -254,6 +254,28 @@ def get_service_duration(service_id: int) -> int:
         cur.close()
         conn.close()
 
+def set_service_duration(service_id: int, duration_minutes: int) -> bool:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE services
+            SET duration_minutes = %s
+            WHERE id = %s
+        """, (duration_minutes, service_id))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return False
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка в set_service_duration: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
 def get_specialist_work_hours(specialist_id: int) -> Tuple[Optional[datetime.time], Optional[datetime.time]]:
     conn = get_db_connection()
     cur = conn.cursor()
