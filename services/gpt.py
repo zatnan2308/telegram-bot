@@ -62,8 +62,7 @@ def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None)
                 {"role": "user", "content": f"Контекст:\n{context}\nСообщение пользователя: {user_text}"}
             ],
             temperature=0.7,
-            max_tokens=200,
-            response_format={ "type": "json_object" }
+            max_tokens=200
         )
         
         gpt_response = response.choices[0].message.content
