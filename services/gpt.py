@@ -1,6 +1,6 @@
 import json
 import openai
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from config.settings import OPENAI_API_KEY, GPT_MODEL
 from utils.logger import logger
 from database.queries import get_service_name, get_specialist_name
@@ -11,7 +11,7 @@ openai.api_key = OPENAI_API_KEY
 def get_booking_system_prompt() -> str:
     return """
     Ты — ассистент по бронированию услуг в салоне красоты. 
-    Отвечай максимально человечно, эмпатично и дружелюбно. 
+    Отвечай максимально человечно, эмпатично и дружелюбно.
     Твои ответы должны быть подробными и адаптивными, учитывая контекст беседы.
     
     Доступные действия:
@@ -87,7 +87,7 @@ def determine_intent(user_id: int, user_text: str, state: Optional[Dict] = None)
 def get_gpt_response(user_id: int, user_text: str, state: Optional[Dict] = None) -> Dict:
     return determine_intent(user_id, user_text, state)
 
-def resolve_specialist_name(input_text: str, specialists: list) -> str:
+def resolve_specialist_name(input_text: str, specialists: List[Tuple[int, str]]) -> str:
     specialist_names = [s[1] for s in specialists]
     prompt = (
         f"У меня есть список специалистов: {', '.join(specialist_names)}. "
@@ -106,3 +106,29 @@ def resolve_specialist_name(input_text: str, specialists: list) -> str:
     resolved_name = response.choices[0].message.content.strip()
     logger.info(f"Resolved specialist name: {resolved_name} for input: {input_text}")
     return resolved_name
+
+def resolve_free_time(input_text: str) -> List[str]:
+    """
+    Принимает ввод пользователя о свободном времени (например, "завтра весь день свободен",
+    "освободи в 27 числа в 15" и т.д.) и возвращает список временных слотов в формате "YYYY-MM-DD HH:MM",
+    разделенных запятыми.
+    """
+    prompt = (
+        f"Пользователь сказал: '{input_text}'. "
+        "Интерпретируй этот запрос и верни список временных слотов в формате 'YYYY-MM-DD HH:MM', разделенных запятыми. "
+        "Если указано 'весь день', верни слоты с интервалом 30 минут с начала рабочего дня (например, с 09:00 до 18:00)."
+    )
+    response = openai.ChatCompletion.create(
+         model=GPT_MODEL,
+         messages=[
+             {"role": "system", "content": "Ты помощник по управлению расписанием специалиста в салоне красоты."},
+             {"role": "user", "content": prompt}
+         ],
+         temperature=0.3,
+         max_tokens=100
+    )
+    free_time_str = response.choices[0].message.content.strip()
+    logger.info(f"Resolved free time slots: {free_time_str} for input: {input_text}")
+    # Предполагаем, что GPT вернул строку с временными слотами, разделенными запятыми
+    slots = [slot.strip() for slot in free_time_str.split(",") if slot.strip()]
+    return slots
