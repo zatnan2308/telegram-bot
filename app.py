@@ -39,8 +39,13 @@ def setup_commands(bot_instance):
         BotCommand("spec_cancel_booking", "Отменить запись (по ID)"),
         BotCommand("spec_add_service", "Добавить услугу к специалисту"),
         BotCommand("set_service_duration", "Установить длительность (мин) для услуги"),
+        # Новые команды для управления расписанием
+        BotCommand("add_freetime", "Добавить свободное время"),
+        BotCommand("remove_freetime", "Удалить свободное время"),
+        BotCommand("list_freetime", "Просмотреть свободное время"),
     ]
     bot_instance.set_my_commands(commands)
+
 
 dispatcher = Dispatcher(bot, None, workers=4)
 dispatcher.add_handler(CommandHandler("start", start))
