@@ -436,3 +436,94 @@ def delete_user_state(user_id: int) -> None:
     finally:
         cur.close()
         conn.close()
+
+
+def add_free_time_slot(specialist_id: int, service_id: int, slot_time: str) -> bool:
+    """
+    Добавляет свободный временной слот для специалиста.
+    slot_time должен быть в формате "YYYY-MM-DD HH:MM".
+    Если такой слот уже существует, функция возвращает False.
+    """
+    try:
+        slot_dt = datetime.datetime.strptime(slot_time, "%Y-%m-%d %H:%M")
+    except ValueError:
+        logger.error(f"Неверный формат даты для свободного времени: {slot_time}")
+        return False
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Проверяем, существует ли уже такой слот
+        cur.execute("""
+            SELECT id FROM booking_times
+            WHERE specialist_id = %s AND service_id = %s AND slot_time = %s
+        """, (specialist_id, service_id, slot_dt))
+        if cur.fetchone():
+            logger.info("Такой слот уже существует")
+            return False
+        # Вставляем новый слот со статусом свободного (is_booked = FALSE)
+        cur.execute("""
+            INSERT INTO booking_times (specialist_id, service_id, slot_time, is_booked)
+            VALUES (%s, %s, %s, FALSE)
+        """, (specialist_id, service_id, slot_dt))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении свободного времени: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def remove_free_time_slot(specialist_id: int, service_id: int, slot_time: str) -> bool:
+    """
+    Удаляет свободный временной слот для специалиста.
+    slot_time должен быть в формате "YYYY-MM-DD HH:MM".
+    """
+    try:
+        slot_dt = datetime.datetime.strptime(slot_time, "%Y-%m-%d %H:%M")
+    except ValueError:
+        logger.error(f"Неверный формат даты для удаления слота: {slot_time}")
+        return False
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM booking_times
+            WHERE specialist_id = %s AND service_id = %s AND slot_time = %s AND is_booked = FALSE
+        """, (specialist_id, service_id, slot_dt))
+        conn.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        logger.error(f"Ошибка при удалении свободного времени: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+        conn.close()
+
+def get_free_time_slots(specialist_id: int, service_id: Optional[int] = None) -> List[str]:
+    """
+    Возвращает список свободных слотов для специалиста.
+    Если service_id указан, фильтрует по услуге, иначе возвращает все слоты.
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        if service_id:
+            cur.execute("""
+                SELECT slot_time FROM booking_times
+                WHERE specialist_id = %s AND service_id = %s AND is_booked = FALSE
+                ORDER BY slot_time
+            """, (specialist_id, service_id))
+        else:
+            cur.execute("""
+                SELECT slot_time FROM booking_times
+                WHERE specialist_id = %s AND is_booked = FALSE
+                ORDER BY slot_time
+            """, (specialist_id,))
+        rows = cur.fetchall()
+        return [r[0].strftime("%Y-%m-%d %H:%M") for r in rows]
+    finally:
+        cur.close()
+        conn.close()
