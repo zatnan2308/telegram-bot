@@ -103,7 +103,8 @@ def resolve_specialist_name(input_text: str, specialists: List[Tuple[int, str]])
          temperature=0.3,
          max_tokens=20
     )
-    resolved_name = response.choices[0].message.content.strip()
+    # Удаляем завершающие пробелы и возможную точку
+    resolved_name = response.choices[0].message.content.strip().rstrip('.')
     logger.info(f"Resolved specialist name: {resolved_name} for input: {input_text}")
     return resolved_name
 
