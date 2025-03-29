@@ -1,6 +1,6 @@
 import json
 import openai
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 from config.settings import OPENAI_API_KEY, GPT_MODEL
 from utils.logger import logger
 from database.queries import get_service_name, get_specialist_name
@@ -129,6 +129,5 @@ def resolve_free_time(input_text: str) -> List[str]:
     )
     free_time_str = response.choices[0].message.content.strip()
     logger.info(f"Resolved free time slots: {free_time_str} for input: {input_text}")
-    # Предполагаем, что GPT вернул строку с временными слотами, разделенными запятыми
     slots = [slot.strip() for slot in free_time_str.split(",") if slot.strip()]
     return slots
